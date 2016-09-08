@@ -13,7 +13,7 @@ local ffi		= require "ffi"
 local log		= require "log"
 local memory	= require "memory"
 local proto		= require "proto/proto"
-local dpdk		= require "dpdk" -- for getTime
+local phobos	= require "phobos" -- for getTime
 require "utils"
 
 local bor, bxor, band, bnot, rshift, lshift= bit.bor, bit.bxor, bit.band, bit.bnot, bit.rshift, bit.lshift
@@ -42,7 +42,7 @@ local mod = {}
 local timestampValidCycles = 2
 
 local function getTimestamp()
-	local t = dpdk.getTime()
+	local t = phobos.getTime()
 	--log:debug('Time: ' .. t .. ' ' .. toBinary(t))
 	-- 64 seconds resolution
 	t = rshift(t, 6)

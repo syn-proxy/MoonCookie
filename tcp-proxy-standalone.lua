@@ -50,6 +50,7 @@ local STRAT = {
 	cookie 		= 1,
 	auth		= 2,
 	auth_full	= 3,
+	auth_ttl	= 4,
 }
 
 
@@ -94,7 +95,8 @@ function tcpProxySlave(lRXDev, lTXDev)
 	--log:setLevel("WARN")
 	--log:setLevel("ERROR")
 	
-	local currentStrat = STRAT['auth_full']
+	local currentStrat = STRAT['cookie']
+	local currentStrat = STRAT['auth_ttl']
 	local maxBurstSize = 63
 
 	lTXStats = stats:newDevTxCounter(lTXDev, "plain")
@@ -140,8 +142,10 @@ function tcpProxySlave(lRXDev, lTXDev)
 	-------------------------------------------------------------
 	log:info("Creating hash map for cookie")
 	local stateCookie = cookie.createSparseHashMapCookie()
-	log:info("Creating bit map")
+	log:info("Creating bit map for syn (full) auth")
 	local bitMapAuth = auth.createBitMapAuth()
+	log:info("Creating bit map for syn TTL auth")
+	local bitMapAuthTtl = auth.createBitMapAuthTtl()
 
 	
 	-------------------------------------------------------------
@@ -156,7 +160,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 	-------------------------------------------------------------
 	-- main event loop
 	-------------------------------------------------------------
-	log:info('Starting TCP Proxy')
+	log:info('Starting TCP Proxy using ' .. currentStrat .. ' strategy')
 	while phobos.running() do
 		rx = lRXQueue:tryRecv(lRXBufs, 1)
 		numSynAck = 0
@@ -172,6 +176,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 				forwardTraffic(txNotTcpBufs[1], lRXBufs[i])
 				lTXQueue:sendN(txNotTcpBufs, 1)
 			else -- TCP
+				--lRXBufs[i]:dump()
 				-- TCP SYN Authentication strategy
 				if currentStrat == STRAT['auth'] then
 					-- send wrong acknowledgement number on unverified SYN
@@ -209,7 +214,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 					if lRXPkt.tcp:getSyn() and not lRXPkt.tcp:getAck() then
 						if bitMapAuth:isWhitelistedSyn(lRXPkt) then
 							forward = true
-						log:debug("forward1")
+						--log:debug("forward1")
 						else
 							-- create and send packet with wrong sequence number
 							if numAuth == 0 then
@@ -217,13 +222,13 @@ function tcpProxySlave(lRXDev, lTXDev)
 							end
 							numAuth = numAuth + 1
 							createResponseAuthFull(lTXAuthBufs[numAuth], lRXPkt)
-						log:debug("send syn ack")
+						--log:debug("send syn ack")
 						end
 					else
 						local action = bitMapAuth:isWhitelistedFull(lRXPkt) 
 						if action == 1 then
 							forward = true
-						log:debug("forward2")
+						--log:debug("forward2")
 						elseif action == 2 then
 							-- send rst
 							if numRst == 0 then
@@ -231,12 +236,43 @@ function tcpProxySlave(lRXDev, lTXDev)
 							end
 							numRst = numRst + 1
 							createResponseRst(lTXRstBufs[numRst], lRXPkt)
-							log:debug("send rst")
+							--log:debug("send rst")
 						else
 							-- drop
 							-- we either received a rst that now whitelisted the connection
 							-- or we received not whitelisted junk
-						log:debug("drop")
+						--log:debug("drop")
+						end
+					end
+					if forward then
+						if numForward == 0 then
+							lTXForwardBufs:allocN(60, rx - (i - 1))
+						end
+						numForward = numForward + 1
+						forwardTrafficAuth(lTXForwardBufs[numForward], lRXBufs[i])
+					end
+				elseif currentStrat == STRAT['auth_ttl'] then
+					-- send wrong acknowledgement number on unverified SYN
+					-- only accept the RST from the client if the TTL values match
+					local forward = false
+					if lRXPkt.tcp:getSyn() and not lRXPkt.tcp:getAck() then
+						if bitMapAuthTtl:isWhitelistedSyn(lRXPkt) then
+							forward = true
+						else
+							-- create and send packet with wrong sequence number
+							if numAuth == 0 then
+								lTXAuthBufs:allocN(60, rx - (i - 1))
+							end
+							numAuth = numAuth + 1
+							createResponseAuth(lTXAuthBufs[numAuth], lRXPkt)
+						end
+					else
+						if bitMapAuthTtl:isWhitelisted(lRXPkt) then
+							forward = true
+						else
+							-- drop
+							-- we either received a rst that now whitelisted the connection
+							-- or we received not whitelisted junk
 						end
 					end
 					if forward then
