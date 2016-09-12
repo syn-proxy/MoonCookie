@@ -321,6 +321,31 @@ function mod.forwardStalled(diff, txBuf)
 	txPkt.ip4:setChecksum()
 end
 
+function getTSVal(pkt)
+	local offset = pkt.tcp:getDataOffset() - 5 -- options length in 32 bits (deduct 5 for standard tcp header length)
+	local i = 0
+	local opt = 0
+	local vals = {}
+	while i < offset * 4 do
+		opt = pkt.payload.uint8[i]
+		if opt == 8 then
+			vals[1] = pkt.payload.uint8[i + 2]
+			vals[2] = pkt.payload.uint8[i + 3]
+			vals[3] = pkt.payload.uint8[i + 4]
+			vals[4] = pkt.payload.uint8[i + 5]
+			i = i + 10
+			return vals
+		elseif opt == 0 or opt == 1 then
+			-- nop end eol option have length 1
+			i = i + 1
+		else
+			-- other options
+			i = i + pkt.payload.uint8[i + 1] -- increment by option length
+		end
+	end
+	return false
+end
+
 function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 	-- set size of tx packet
 	local size = 54
@@ -340,6 +365,7 @@ function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 	-- reduce seq num by 1 as during handshake it will be increased by 1 (in SYN/ACK)
 	-- this way, it does not have to be translated at all
 	txPkt.tcp:setSeqNumber(txPkt.tcp:getSeqNumber() - 1)
+	txPkt.tcp:setAckNumber(0)
 	txPkt.tcp:setWindow(29200)
 	txPkt.tcp:setFlags(0)
 	txPkt.tcp:setSyn()
@@ -352,6 +378,24 @@ function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 		txPkt.payload.uint16[1] = hton16(mss) -- MSS option
 		offset = offset + 4
 	end
+	
+	if tsopt then
+		vals = getTSVal(rxBuf:getTcp4Packet())
+		if vals then
+			txPkt.payload.uint8[offset] = 8 -- ts option type
+			txPkt.payload.uint8[offset + 1] = 10 -- ts option length (2 bytes)
+			txPkt.payload.uint8[offset + 2] = vals[1] -- ts option tsval
+			txPkt.payload.uint8[offset + 3] = vals[2] -- ts option tsval
+			txPkt.payload.uint8[offset + 4] = vals[3] -- ts option tsval
+			txPkt.payload.uint8[offset + 5] = vals[4] -- ts option tsval
+			txPkt.payload.uint8[offset + 6] = 0 -- ts option ecr
+			txPkt.payload.uint8[offset + 7] = 0 -- ts option ecr
+			txPkt.payload.uint8[offset + 8] = 0 -- ts option ecr
+			txPkt.payload.uint8[offset + 9] = 0 -- ts option ecr
+			offset = offset + 10
+		end
+	end
+		
 	-- window scale option
 	if wsopt then
 		txPkt.payload.uint8[offset] = 3 -- WSOPT option type
@@ -359,21 +403,11 @@ function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 		txPkt.payload.uint8[offset + 2] = wsopt -- WSOPT option
 		offset = offset + 3
 	end
-	if tsopt then
-		txPkt.payload.uint8[offset] = 8 -- ts option type
-		txPkt.payload.uint8[offset + 1] = 10 -- ts option length (2 bytes)
-		txPkt.payload.uint8[offset + 2] = 0 -- ts option tsval
-		txPkt.payload.uint8[offset + 3] = 0 -- ts option tsval
-		txPkt.payload.uint8[offset + 4] = 0 -- ts option tsval
-		txPkt.payload.uint8[offset + 5] = 0 -- ts option tsval
-		txPkt.payload.uint8[offset + 6] = 0 -- ts option ecr
-		txPkt.payload.uint8[offset + 7] = 0 -- ts option ecr
-		txPkt.payload.uint8[offset + 8] = 0 -- ts option ecr
-		txPkt.payload.uint8[offset + 9] = 0 -- ts option ecr
-		offset = offset + 10
-	end
-
+	
 	local pad = 4 - (offset % 4)
+	if pad == 4 then
+		pad = 0
+	end
 	if pad > 0 then
 		txPkt.payload.uint8[offset + pad - 1] = 0 -- eop
 		for i = pad - 2, 0, -1 do
@@ -511,13 +545,7 @@ function mod.getSynAckBufs()
 			pkt.payload.uint16[1] = hton16(SERVER_MSS) -- MSS option
 			offset = offset + 4
 		end
-		-- window scale option
-		if SERVER_WSOPT then
-			pkt.payload.uint8[offset] = 3 -- WSOPT option type
-			pkt.payload.uint8[offset + 1] = 3 -- WSOPT option length (3 bytes)
-			pkt.payload.uint8[offset + 2] = SERVER_WSOPT -- WSOPT option
-			offset = offset + 3
-		end
+		
 		-- ts option
 		if SERVER_TSOPT then
 			pkt.payload.uint8[offset] = 8 -- ts option type
@@ -532,9 +560,20 @@ function mod.getSynAckBufs()
 			pkt.payload.uint8[offset + 9] = 0 -- ts option ecr
 			offset = offset + 10
 		end
+		
+		-- window scale option
+		if SERVER_WSOPT then
+			pkt.payload.uint8[offset] = 3 -- WSOPT option type
+			pkt.payload.uint8[offset + 1] = 3 -- WSOPT option length (3 bytes)
+			pkt.payload.uint8[offset + 2] = SERVER_WSOPT -- WSOPT option
+			offset = offset + 3
+		end
 
 		-- determine if and how much padding is needed
 		local pad = 4 - (offset % 4)
+		if pad == 4 then
+			pad = 0
+		end
 		if pad > 0 then
 			pkt.payload.uint8[offset + pad - 1] = 0 -- eop
 			for i = pad - 2, 0, -1 do
