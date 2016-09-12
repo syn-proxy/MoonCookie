@@ -307,13 +307,8 @@ function mod.sequenceNumberTranslation(diff, rxBuf, txBuf, rxPkt, txPkt)
 	end
 	txPkt.eth.src = PROXY_MAC
 
-	
-	-- calculate TCP checksum
-	-- IP header does not change, hence, do not recalculate IP checksum
-	--if leftToRight then
-		--log:debug('Calc checksum ' .. (leftToRight and 'from left ' or 'from right '))
-		txPkt.tcp:calculateChecksum(txBuf:getData(), size, true)
-	--end
+	-- reset IP checksum for offloading
+	txPkt.ip4:setChecksum()
 end
 
 ffi.cdef[[
@@ -331,7 +326,9 @@ function mod.forwardStalled(diff, txBuf)
 	txPkt.tcp:setAckNumber(txPkt.tcp:getAckNumber() + diff)
 	txPkt.eth.dst = SERVER_MAC
 	txPkt.eth.src = PROXY_MAC
-	txPkt.tcp:calculateChecksum(txBuf:getData(), txBuf:getSize(), true)
+	
+	-- reset IP checksum for offloading
+	txPkt.ip4:setChecksum()
 end
 
 function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
@@ -404,9 +401,8 @@ function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 	end
 	txBuf:setSize(size)
 
-	-- calculate checksums
-	txPkt.ip4:calculateChecksum()
-	txPkt.tcp:calculateChecksum(txBuf:getData(), size, true)
+	-- reset IP checksum for offloading
+	txPkt.ip4:setChecksum()
 end
 
 function mod.createAckToServer(txBuf, rxBuf, rxPkt)
@@ -442,9 +438,8 @@ function mod.createAckToServer(txBuf, rxBuf, rxPkt)
 	
 	txPkt:setLength(54)
 
-	-- calculate checksums -- TODO offload
-	txPkt.ip4:calculateChecksum()
-	txPkt.tcp:calculateChecksum(txBuf:getData(), size, true)
+	-- reset IP checksum for offloading
+	txPkt.ip4:setChecksum()
 end
 
 function mod.createSynAckToClient(txBuf, rxPkt)
@@ -473,6 +468,8 @@ function mod.createSynAckToClient(txBuf, rxPkt)
 	txBuf:setSize(size)
 end
 
+-- all non-TCP traffic
+-- for measurement setup exchange macs and let switch do the magic
 function mod.forwardTraffic(txBuf, rxBuf)
 	-- set size of tx packet
 	local size = rxBuf:getSize()
@@ -482,7 +479,7 @@ function mod.forwardTraffic(txBuf, rxBuf)
 	ffi.copy(txBuf:getData(), rxBuf:getData(), size)
 	
 	-- determine direction for MAC translation
-	local txPkt = txBuf:getTcp4Packet()
+	local txPkt = txBuf:getEthernetPacket()
 	local srcMac = txPkt.eth.src
 	if srcMac == CLIENT_MAC then
 		--log:debug("to server")
@@ -493,8 +490,6 @@ function mod.forwardTraffic(txBuf, rxBuf)
 		txPkt.eth.dst = CLIENT_MAC
 		txPkt.eth.src = PROXY_MAC
 	end
-	txPkt.ip4:calculateChecksum()
-	txPkt.tcp:calculateChecksum(txBuf:getData(), size, true)
 end
 
 -------------------------------------------------------------------------------------------
@@ -635,8 +630,6 @@ local RIGHT_TO_LEFT = false
 local sparseHashMapCookie = {}
 sparseHashMapCookie.__index = sparseHashMapCookie
 
--- TODO add some form of timestamp and garbage collection on timeout
--- eg if not refreshed, remove after 60 seconds(2bits, every 30 seconds unset one, if both unset remove)
 function mod.createSparseHashMapCookie(size)
 	log:info("Creating a sparse hash map for TCP SYN flood cookie strategy")
 	return setmetatable({

@@ -95,7 +95,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 	--log:setLevel("WARN")
 	--log:setLevel("ERROR")
 	
-	local currentStrat = STRAT['cookie']
+	--local currentStrat = STRAT['cookie']
 	local currentStrat = STRAT['auth_ttl']
 	local maxBurstSize = 63
 
@@ -299,10 +299,12 @@ function tcpProxySlave(lRXDev, lTXDev)
 								-- ack to server
 								rTXAckBufs:allocN(60, 1)
 								createAckToServer(rTXAckBufs[1], lRXBufs[i], lRXPkt)
-								lTXQueue:sendN(rTXAckBufs, 1)
+								rTXAckBufs[1]:offloadTcpChecksum()
+								lTXQueue:sendSingle(rTXAckBufs[1])
 									
 								if stalled then
 									forwardStalled(diff, stalled)
+									stalled:offloadTcpChecksum()
 									lTXQueue:sendSingle(stalled)
 								end
 							else
@@ -377,9 +379,11 @@ function tcpProxySlave(lRXDev, lTXDev)
 			-- all strategies
 			-- send forwarded packets and free unused buffers
 			if numForward > 0 then
-				--lTXForwardBufs[1]:dumpFlags()
-				--lTXForwardBufs:offloadTcpChecksums(nil, nil, nil, numForward)
-				--lTXForwardBufs[1]:dumpFlags()
+				-- authentication strategies dont touch anything above ethernet
+				-- offloading would set checksums to 0 -> dont
+				if currentStrat == STRAT['cookie'] then
+					lTXForwardBufs:offloadTcpChecksums(nil, nil, nil, numForward)
+				end
 				lTXQueue:sendN(lTXForwardBufs, numForward)
 				lTXForwardBufs:freeAfter(numForward)
 			end
