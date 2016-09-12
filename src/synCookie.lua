@@ -20,6 +20,8 @@ local bor, bxor, band, bnot, rshift, lshift= bit.bor, bit.bxor, bit.band, bit.bn
 local time = time
 
 local clib = ffi.load("build/mooncookie")
+
+
 ---------------------------------------------------
 -- Terminology
 ---------------------------------------------------
@@ -43,13 +45,10 @@ local timestampValidCycles = 2
 
 local function getTimestamp()
 	local t = phobos.getTime()
-	--log:debug('Time: ' .. t .. ' ' .. toBinary(t))
 	-- 64 seconds resolution
 	t = rshift(t, 6)
-	--log:debug('Time: ' .. t .. ' ' .. toBinary(t))
 	-- 5 bits
 	t = t % 32
-	--log:debug('Time: ' .. t .. ' ' .. toBinary(t))
 	return t
 end
 
@@ -100,6 +99,7 @@ local function extractOptions(pkt)
 	end
 	return mss, wsopt, tsval
 end
+
 
 -------------------------------------------------------------------------------------------
 ---- TCP Options
@@ -152,6 +152,7 @@ local function decodeWsopt(wsopt)
 	end
 	return wsopt
 end
+
 
 -------------------------------------------------------------------------------------------
 ---- Hash
@@ -208,7 +209,7 @@ local function calculateCookie(pkt)
 	---- ts 5 - mss 3 - wsopt 4 - hash 20
 	--------------------------------------
 	
-	-- timestamp and hash involve C calls, hence, are done on the whole batch in C
+	-- timestamp and hash involve C calls, hence, are done for the whole batch in C
 
 	-- extra options we support
 	local mss, wsopt = extractOptions(pkt)
@@ -218,11 +219,7 @@ local function calculateCookie(pkt)
 	wsopt = encodeWsopt(wsopt)
 	wsopt = lshift(wsopt, 20)
 	
-	--log:debug('Created MSS:    ' .. toBinary(mss))
-	--log:debug('Created WSOPT:  ' .. toBinary(wsopt))
 	local cookie = mss + wsopt
-	--log:debug('Created cookie: ' .. toBinary(cookie))
-	--log:debug("cookie " .. tostring(cookie))
 	return cookie
 end
 
@@ -233,13 +230,10 @@ function mod.verifyCookie(pkt)
 	end
 
 	local cookie = pkt.tcp:getAckNumber()
-	--log:debug('Got ACK:        ' .. toBinary(cookie))
 	cookie = cookie - 1
-	--log:debug('Cookie:         ' .. toBinary(cookie))
 
 	-- check timestamp first
 	local ts = rshift(cookie, 27)
-	--log:debug('TS:             ' .. toBinary(ts))
 	if not verifyTimestamp(ts) then
 		--log:warn('Received cookie with invalid timestamp')
 		return false
@@ -247,7 +241,6 @@ function mod.verifyCookie(pkt)
 
 	-- check hash
 	local hash = band(cookie, 0x000fffff)
-	-- log:debug('Hash:           ' .. toBinary(hash))
 	if not verifyHash(
 			hash, 
 			pkt.ip4:getSrc(), 
@@ -263,8 +256,6 @@ function mod.verifyCookie(pkt)
 		--log:debug('Received legitimate cookie')
 		local mss = decodeMss(band(rshift(cookie, 24), 0x7))
 		local wsopt = decodeWsopt(band(rshift(cookie, 20), 0xf))
-		--log:debug('wsopt:          ' .. toBinary(wsopt))
-		--log:debug("dec " .. wsopt)
 		return mss, wsopt
 	end
 end
@@ -274,8 +265,7 @@ end
 ---- Packet modification and crafting for cookie strategy
 -------------------------------------------------------------------------------------------
 
-
--- TODO config options
+-- config options
 local SERVER_MSS = 1460
 local SERVER_WSOPT = 7
 local SERVER_TSOPT = true
@@ -416,8 +406,8 @@ function mod.createAckToServer(txBuf, rxBuf, rxPkt)
 	local txPkt = txBuf:getTcp4Packet()
 
 	-- mac addresses
-	txPkt.eth.src = PROXY_MAC--rxPkt.eth.dst
-	txPkt.eth.dst = SERVER_MAC--rxPkt.eth.src
+	txPkt.eth.src = PROXY_MAC
+	txPkt.eth.dst = SERVER_MAC
 	
 	-- ip addresses
 	txPkt.ip4.src = rxPkt.ip4.dst
@@ -447,8 +437,8 @@ function mod.createSynAckToClient(txBuf, rxPkt)
 	local cookie = calculateCookie(rxPkt)
 
 	-- MAC addresses
-	txPkt.eth.dst = CLIENT_MAC--rxPkt.eth.src
-	txPkt.eth.src = PROXY_MAC--rxPkt.eth.dst
+	txPkt.eth.dst = CLIENT_MAC
+	txPkt.eth.src = PROXY_MAC
 
 	-- IP addresses
 	txPkt.ip4.dst = rxPkt.ip4.src
@@ -482,11 +472,9 @@ function mod.forwardTraffic(txBuf, rxBuf)
 	local txPkt = txBuf:getEthernetPacket()
 	local srcMac = txPkt.eth.src
 	if srcMac == CLIENT_MAC then
-		--log:debug("to server")
 		txPkt.eth.dst = SERVER_MAC
 		txPkt.eth.src = PROXY_MAC
 	elseif srcMac == SERVER_MAC then
-		--log:debug("to client")
 		txPkt.eth.dst = CLIENT_MAC
 		txPkt.eth.src = PROXY_MAC
 	end
@@ -538,10 +526,10 @@ function mod.getSynAckBufs()
 			pkt.payload.uint8[offset + 3] = 0 -- ts option tsval
 			pkt.payload.uint8[offset + 4] = 0 -- ts option tsval
 			pkt.payload.uint8[offset + 5] = 0 -- ts option tsval
-			pkt.payload.uint8[offset + 6] = 0--band(rshift(tsval, 48), 0xff) -- ts option ecr
-			pkt.payload.uint8[offset + 7] = 0--band(rshift(tsval, 32), 0xff) -- ts option ecr
-			pkt.payload.uint8[offset + 8] = 0--band(rshift(tsval, 16), 0xff) -- ts option ecr
-			pkt.payload.uint8[offset + 9] = 0--band(		  tsval		, 0xff) -- ts option ecr
+			pkt.payload.uint8[offset + 6] = 0 -- ts option ecr
+			pkt.payload.uint8[offset + 7] = 0 -- ts option ecr
+			pkt.payload.uint8[offset + 8] = 0 -- ts option ecr
+			pkt.payload.uint8[offset + 9] = 0 -- ts option ecr
 			offset = offset + 10
 		end
 
@@ -595,7 +583,7 @@ end
 
 
 -------------------------------------------------------------------------------------------
----- State keeping
+---- Google Sparse Hash Map for TCP SYN cookies
 -------------------------------------------------------------------------------------------
 
 ffi.cdef [[
@@ -619,13 +607,6 @@ ffi.cdef [[
 	struct sparse_hash_map_cookie_value * mg_sparse_hash_map_cookie_finalize(struct sparse_hash_map_cookie *m, struct sparse_hash_map_cookie_key *k, uint32_t seq);
 	struct sparse_hash_map_cookie_value * mg_sparse_hash_map_cookie_find_update(struct sparse_hash_map_cookie *m, struct sparse_hash_map_cookie_key *k, bool reset, bool left_fin, bool right_fin, bool ack);
 ]]
-
-local LEFT_TO_RIGHT = true
-local RIGHT_TO_LEFT = false
-
-----------------------------------------------------------------------------------------------------------------------------
----- Google Sparse Hash Map for TCP SYN cookies
-----------------------------------------------------------------------------------------------------------------------------
 
 local sparseHashMapCookie = {}
 sparseHashMapCookie.__index = sparseHashMapCookie
@@ -708,7 +689,7 @@ function sparseHashMapCookie:isVerified(pkt)
 			rightFin = true
 		end
 	end
-	if pkt.tcp:getAck() then -- and not pkt.tcp:getSyn() and not pkt.tcp:getFin() then
+	if pkt.tcp:getAck() then
 		ack = true
 	end
 

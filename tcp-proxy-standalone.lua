@@ -22,7 +22,6 @@ jit.opt.start("maxrecord=10000", "maxirconst=1000", "loopunroll=40")
 ---------------------------------------------------
 -- Usage
 ---------------------------------------------------
--- TODO config for interfaces etc
 
 function master(rxPort, txPort)
 	if not txPort or not rxPort then
@@ -95,8 +94,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 	--log:setLevel("WARN")
 	--log:setLevel("ERROR")
 	
-	--local currentStrat = STRAT['cookie']
-	local currentStrat = STRAT['auth_ttl']
+	local currentStrat = STRAT['cookie']
 	local maxBurstSize = 63
 
 	lTXStats = stats:newDevTxCounter(lTXDev, "plain")
@@ -214,7 +212,6 @@ function tcpProxySlave(lRXDev, lTXDev)
 					if lRXPkt.tcp:getSyn() and not lRXPkt.tcp:getAck() then
 						if bitMapAuth:isWhitelistedSyn(lRXPkt) then
 							forward = true
-						--log:debug("forward1")
 						else
 							-- create and send packet with wrong sequence number
 							if numAuth == 0 then
@@ -222,13 +219,11 @@ function tcpProxySlave(lRXDev, lTXDev)
 							end
 							numAuth = numAuth + 1
 							createResponseAuthFull(lTXAuthBufs[numAuth], lRXPkt)
-						--log:debug("send syn ack")
 						end
 					else
 						local action = bitMapAuth:isWhitelistedFull(lRXPkt) 
 						if action == 1 then
 							forward = true
-						--log:debug("forward2")
 						elseif action == 2 then
 							-- send rst
 							if numRst == 0 then
@@ -236,12 +231,10 @@ function tcpProxySlave(lRXDev, lTXDev)
 							end
 							numRst = numRst + 1
 							createResponseRst(lTXRstBufs[numRst], lRXPkt)
-							--log:debug("send rst")
 						else
 							-- drop
 							-- we either received a rst that now whitelisted the connection
 							-- or we received not whitelisted junk
-						--log:debug("drop")
 						end
 					end
 					if forward then
@@ -311,7 +304,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 								log:debug("right verify failed")
 							end
 						end
-					----------------------------------------------------------------------- any verified packet from server
+					-- any verified packet from server
 					else -- check verified status
 						local diff, stalled = stateCookie:isVerified(lRXPkt) 
 						if not diff and lRXPkt.tcp:getAck() then -- finish handshake with left, start with right
@@ -326,9 +319,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 									lTXForwardBufs:allocN(60, rx - (i - 1))
 								end
 								numForward = numForward + 1
-								--lRXBufs[i]:dumpFlags()
 								createSynToServer(lTXForwardBufs[numForward], lRXBufs[i], mss, wsopt)
-								--lTXForwardBufs[numForward]:dumpFlags()
 							else
 								--log:warn('Wrong cookie, dropping packet ')
 								-- drop, and done

@@ -16,6 +16,7 @@ local clib = ffi.load("build/mooncookie")
 
 local mod = {}
 
+
 -------------------------------------------------------------------------------------------
 ---- Packet modification and crafting for SYN authentication
 -------------------------------------------------------------------------------------------
@@ -108,6 +109,11 @@ function mod.getRstBufs()
 	return mem:bufArray()
 end
 
+
+----------------------------------------------------------------------------------------------------------------------------
+---- Bit map for syn (full) authentication
+----------------------------------------------------------------------------------------------------------------------------
+
 ffi.cdef [[
 	struct bit_map_auth_map {};
 	struct bit_map_auth_map * mg_bit_map_auth_create();
@@ -115,11 +121,6 @@ ffi.cdef [[
 	bool mg_bit_map_auth_update(struct bit_map_auth_map *m, uint32_t k, bool forced);
 	bool mg_bit_map_auth_update_syn(struct bit_map_auth_map *m, uint32_t k);
 ]]
-
-
-----------------------------------------------------------------------------------------------------------------------------
----- Bit map for syn (full) authentication
-----------------------------------------------------------------------------------------------------------------------------
 
 local bitMapAuth = {}
 bitMapAuth.__index = bitMapAuth
@@ -176,7 +177,6 @@ ffi.cdef [[
 	bool mg_bit_map_auth_ttl_update_syn(struct bit_map_auth_ttl_map *m, uint32_t k, uint8_t ttl);
 ]]
 
-
 local bitMapAuthTtl = {}
 bitMapAuthTtl.__index = bitMapAuthTtl
 
@@ -198,5 +198,6 @@ function bitMapAuthTtl:isWhitelistedSyn(pkt)
 	local k = getKey(pkt)
 	return clib.mg_bit_map_auth_ttl_update_syn(self.map, k, pkt.ip4:getTTL())
 end
+
 
 return mod
