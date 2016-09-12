@@ -19,38 +19,38 @@ local bor, band, bnot, rshift, lshift= bit.bor, bit.band, bit.bnot, bit.rshift, 
 local jit = require "jit"
 jit.opt.start("maxrecord=10000", "maxirconst=1000", "loopunroll=40")
 
----------------------------------------------------
--- Usage
----------------------------------------------------
-
-function master(rxPort, txPort)
-	if not txPort or not rxPort then
-		log:info("Usage: rxPort txPort")
-		return
-	end
-	txPort = tonumber(txPort)
-	rxPort = tonumber(rxPort)
-	
-	local lRXDev = device.config{ port = rxPort }
-	local lTXDev = device.config{ port = txPort }
-	lRXDev:wait()
-	lTXDev:wait()
-	phobos.startTask("tcpProxySlave", lRXDev, lTXDev)
-	
-	phobos.waitForTasks()
-end
-
-
----------------------------------------------------
--- Constants
----------------------------------------------------
-
+-- implemented strategies
 local STRAT = {
 	cookie 		= 1,
 	auth		= 2,
 	auth_full	= 3,
 	auth_ttl	= 4,
 }
+
+function configure(parser)
+	parser:description("TCP SYN Proxy")
+	parser:argument("dev", "Device to use"):args(1):convert(tonumber)
+	strats = ""
+	first = true
+	for k,_ in pairs(STRAT) do
+		if first then
+			strats = k
+			first = false
+		else
+			strats = strats .. "|" .. k
+		end
+	end
+	parser:argument("strategy", "Mitigation strategy [" .. strats .. "]"):args("1"):convert(STRAT):default('cookie')
+	return parser:parse()
+end
+
+function master(args, ...)
+	local dev = device.config{ port = args.dev }
+	dev:wait()
+	phobos.startTask("tcpProxySlave", dev, args.strategy)
+	
+	phobos.waitForTasks()
+end
 
 
 ----------------------------------------------------
@@ -89,24 +89,23 @@ local createResponseRst = auth.createResponseRst
 -- slave
 ---------------------------------------------------
 
-function tcpProxySlave(lRXDev, lTXDev)
+function tcpProxySlave(dev, strategy)
 	log:setLevel("DEBUG")
 	--log:setLevel("WARN")
 	--log:setLevel("ERROR")
-	
-	local currentStrat = STRAT['cookie']
+
 	local maxBurstSize = 63
 
-	lTXStats = stats:newDevTxCounter(lTXDev, "plain")
-	lRXStats = stats:newDevRxCounter(lRXDev, "plain")
+	lTXStats = stats:newDevTxCounter(dev, "plain")
+	lRXStats = stats:newDevRxCounter(dev, "plain")
 	
 	-- RX buffers for left
-	local lRXQueue = lRXDev:getRxQueue(0)
+	local lRXQueue = dev:getRxQueue(0)
 	local lRXMem = memory.createMemPool()	
 	local lRXBufs = lRXMem:bufArray(maxBurstSize)
 
 	-- TX buffers
-	local lTXQueue = lTXDev:getTxQueue(0)
+	local lTXQueue = dev:getTxQueue(0)
 
 	-- buffer for cookie syn/ack to left
 	local numSynAck = 0
@@ -136,29 +135,31 @@ function tcpProxySlave(lRXDev, lTXDev)
 
 
 	-------------------------------------------------------------
-	-- Hash table
+	-- State keeping data structure
 	-------------------------------------------------------------
-	log:info("Creating hash map for cookie")
-	local stateCookie = cookie.createSparseHashMapCookie()
-	log:info("Creating bit map for syn (full) auth")
-	local bitMapAuth = auth.createBitMapAuth()
-	log:info("Creating bit map for syn TTL auth")
-	local bitMapAuthTtl = auth.createBitMapAuthTtl()
-
+	local stateCookie
+	local bitMapAuth
+	local bitMapAuthTtl
+	if strategy == STRAT['cookie'] then
+		stateCookie = cookie.createSparseHashMapCookie()
+	elseif strategy == STRAT['auth_ttl'] then
+		bitMapAuthTtl = auth.createBitMapAuthTtl()
+	else
+		bitMapAuth = auth.createBitMapAuth()
+	end
 	
+
 	-------------------------------------------------------------
-	-- stall table
+	-- mempool and buffer to store stalled segments
 	-------------------------------------------------------------
 	local stallMem = memory.createMemPool()
 	local stallBufs = stallMem:bufArray(1)
-	log:info("Creating stall table")
-	local stallTable = {}
 
 
 	-------------------------------------------------------------
 	-- main event loop
 	-------------------------------------------------------------
-	log:info('Starting TCP Proxy using ' .. currentStrat .. ' strategy')
+	log:info('Starting TCP Proxy')
 	while phobos.running() do
 		rx = lRXQueue:tryRecv(lRXBufs, 1)
 		numSynAck = 0
@@ -176,7 +177,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 			else -- TCP
 				--lRXBufs[i]:dump()
 				-- TCP SYN Authentication strategy
-				if currentStrat == STRAT['auth'] then
+				if strategy == STRAT['auth'] then
 					-- send wrong acknowledgement number on unverified SYN
 					local forward = false
 					if lRXPkt.tcp:getSyn() and not lRXPkt.tcp:getAck() then
@@ -206,7 +207,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 						numForward = numForward + 1
 						forwardTrafficAuth(lTXForwardBufs[numForward], lRXBufs[i])
 					end
-				elseif currentStrat == STRAT['auth_full'] then
+				elseif strategy == STRAT['auth_full'] then
 					-- do a full handshake for whitelisting, then proxy sends rst
 					local forward = false
 					if lRXPkt.tcp:getSyn() and not lRXPkt.tcp:getAck() then
@@ -244,7 +245,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 						numForward = numForward + 1
 						forwardTrafficAuth(lTXForwardBufs[numForward], lRXBufs[i])
 					end
-				elseif currentStrat == STRAT['auth_ttl'] then
+				elseif strategy == STRAT['auth_ttl'] then
 					-- send wrong acknowledgement number on unverified SYN
 					-- only accept the RST from the client if the TTL values match
 					local forward = false
@@ -351,7 +352,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 		end
 		if rx > 0 then
 			-- strategy specific responses
-			if currentStrat == STRAT['cookie'] then	
+			if strategy == STRAT['cookie'] then	
 				if numSynAck > 0 then
 					-- send syn ack
 					calculateCookiesBatched(lTXSynAckBufs.array, numSynAck)
@@ -372,7 +373,7 @@ function tcpProxySlave(lRXDev, lTXDev)
 			if numForward > 0 then
 				-- authentication strategies dont touch anything above ethernet
 				-- offloading would set checksums to 0 -> dont
-				if currentStrat == STRAT['cookie'] then
+				if strategy == STRAT['cookie'] then
 					lTXForwardBufs:offloadTcpChecksums(nil, nil, nil, numForward)
 				end
 				lTXQueue:sendN(lTXForwardBufs, numForward)
