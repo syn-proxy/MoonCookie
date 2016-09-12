@@ -356,8 +356,8 @@ function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 	-- adjust some members: sequency number, flags, checksum, length fields
 	local txPkt = txBuf:getTcp4Packet()
 	
-	-- check that ack has timestamp option
-	local _, _, tsopt = extractOptions(txPkt)
+	-- get timestamp value if possible
+	tsVals = getTSVal(txPkt)
 	
 	--translate MAC
 	txPkt.eth.dst = SERVER_MAC
@@ -379,21 +379,18 @@ function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 		offset = offset + 4
 	end
 	
-	if tsopt then
-		vals = getTSVal(rxBuf:getTcp4Packet())
-		if vals then
-			txPkt.payload.uint8[offset] = 8 -- ts option type
-			txPkt.payload.uint8[offset + 1] = 10 -- ts option length (2 bytes)
-			txPkt.payload.uint8[offset + 2] = vals[1] -- ts option tsval
-			txPkt.payload.uint8[offset + 3] = vals[2] -- ts option tsval
-			txPkt.payload.uint8[offset + 4] = vals[3] -- ts option tsval
-			txPkt.payload.uint8[offset + 5] = vals[4] -- ts option tsval
-			txPkt.payload.uint8[offset + 6] = 0 -- ts option ecr
-			txPkt.payload.uint8[offset + 7] = 0 -- ts option ecr
-			txPkt.payload.uint8[offset + 8] = 0 -- ts option ecr
-			txPkt.payload.uint8[offset + 9] = 0 -- ts option ecr
-			offset = offset + 10
-		end
+	if tsVals then
+		txPkt.payload.uint8[offset] = 8 -- ts option type
+		txPkt.payload.uint8[offset + 1] = 10 -- ts option length (2 bytes)
+		txPkt.payload.uint8[offset + 2] = tsVals[1] -- ts option tsval
+		txPkt.payload.uint8[offset + 3] = tsVals[2] -- ts option tsval
+		txPkt.payload.uint8[offset + 4] = tsVals[3] -- ts option tsval
+		txPkt.payload.uint8[offset + 5] = tsVals[4] -- ts option tsval
+		txPkt.payload.uint8[offset + 6] = 0 -- ts option ecr
+		txPkt.payload.uint8[offset + 7] = 0 -- ts option ecr
+		txPkt.payload.uint8[offset + 8] = 0 -- ts option ecr
+		txPkt.payload.uint8[offset + 9] = 0 -- ts option ecr
+		offset = offset + 10
 	end
 		
 	-- window scale option
