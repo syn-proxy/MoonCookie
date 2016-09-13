@@ -335,12 +335,19 @@ function getTSVal(pkt)
 			vals[4] = pkt.payload.uint8[i + 5]
 			i = i + 10
 			return vals
-		elseif opt == 0 or opt == 1 then
+		elseif opt == 1 then
 			-- nop end eol option have length 1
 			i = i + 1
+		elseif opt == 0 then	
+			return false
 		else
 			-- other options
-			i = i + pkt.payload.uint8[i + 1] -- increment by option length
+			local inc = pkt.payload.uint8[i + 1] -- increment by option length
+			if inc == 0 then
+				log:warn("This shouldn't happen: wrong TCP options format")
+				return false
+			end
+			i = i + inc
 		end
 	end
 	return false
