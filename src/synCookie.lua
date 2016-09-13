@@ -321,7 +321,7 @@ function mod.forwardStalled(diff, txBuf)
 	txPkt.ip4:setChecksum()
 end
 
-function getTSVal(pkt)
+local function getTSVal(pkt)
 	local offset = pkt.tcp:getDataOffset() - 5 -- options length in 32 bits (deduct 5 for standard tcp header length)
 	local i = 0
 	local opt = 0
