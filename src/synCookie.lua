@@ -31,6 +31,7 @@ local clib = ffi.load("build/mooncookie")
 
 local SERVER_IP = parseIP4Address("192.168.1.1")
 local CLIENT_MAC = parseMacAddress("90:e2:ba:98:58:78")
+local ATTACKER_MAC = parseMacAddress("90:e2:ba:98:58:79")
 local SERVER_MAC = parseMacAddress("90:e2:ba:98:88:e8")
 local PROXY_MAC  = parseMacAddress("90:e2:ba:98:88:e9") 
 
@@ -475,7 +476,11 @@ function mod.createSynAckToClient(txBuf, rxPkt)
 	local cookie = calculateCookie(rxPkt)
 
 	-- MAC addresses
-	txPkt.eth.dst = CLIENT_MAC
+	if rxPkt.eth.src == CLIENT_MAC then
+		txPkt.eth.dst = CLIENT_MAC
+	else
+		txPkt.eth.dst = ATTACKER_MAC
+	end
 	txPkt.eth.src = PROXY_MAC
 
 	-- IP addresses
