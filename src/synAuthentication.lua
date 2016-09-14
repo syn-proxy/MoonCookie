@@ -23,6 +23,7 @@ local mod = {}
 
 local SERVER_IP = parseIP4Address("192.168.1.1")
 local CLIENT_MAC = parseMacAddress("90:e2:ba:98:58:78")
+local CLIENT_MAC_64 = CLIENT_MAC:get()
 local SERVER_MAC = parseMacAddress("90:e2:ba:98:88:e8")
 local PROXY_MAC  = parseMacAddress("90:e2:ba:98:88:e9") 
 
@@ -134,7 +135,7 @@ end
 
 local function getKey(pkt)
 	local mac = pkt.eth.src
-	if mac == CLIENT_MAC then
+	if mac:get() == CLIENT_MAC_64 then
 		return pkt.ip4:getSrc()
 	else
 		return pkt.ip4:getDst()

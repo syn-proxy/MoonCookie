@@ -31,8 +31,13 @@ local clib = ffi.load("build/mooncookie")
 
 local SERVER_IP = parseIP4Address("192.168.1.1")
 local CLIENT_MAC = parseMacAddress("90:e2:ba:98:58:78")
+local CLIENT_MAC_64 = CLIENT_MAC:get()
+local ATTACKER_MAC = parseMacAddress("90:e2:ba:98:58:79")
+local ATTACKER_MAC_64 = ATTACKER_MAC:get()
 local SERVER_MAC = parseMacAddress("90:e2:ba:98:88:e8")
+local SERVER_MAC_64 = SERVER_MAC:get()
 local PROXY_MAC  = parseMacAddress("90:e2:ba:98:88:e9") 
+local PROXY_MAC_64 = PROXY_MAC:get()
 
 local mod = {}
 
@@ -224,7 +229,7 @@ local function calculateCookie(pkt)
 end
 
 function mod.verifyCookie(pkt)
-	if pkt.eth.src == SERVER_MAC then
+	if pkt.eth.src:get() == SERVER_MAC_64 then
 		--log:warn("Verify cookie from Server -> drop")
 		return false
 	end
@@ -276,7 +281,7 @@ function mod.sequenceNumberTranslation(diff, rxBuf, txBuf, rxPkt, txPkt)
 	-- determine direction
 	local srcMac = rxPkt.eth.src
 	local leftToRight = false
-	if srcMac == CLIENT_MAC then
+	if srcMac:get() == CLIENT_MAC_64 then
 		leftToRight = true
 	end
 
@@ -321,7 +326,7 @@ function mod.forwardStalled(diff, txBuf)
 	txPkt.ip4:setChecksum()
 end
 
-function getTSVal(pkt)
+local function getTSVal(pkt)
 	local offset = pkt.tcp:getDataOffset() - 5 -- options length in 32 bits (deduct 5 for standard tcp header length)
 	local i = 0
 	local opt = 0
@@ -335,12 +340,19 @@ function getTSVal(pkt)
 			vals[4] = pkt.payload.uint8[i + 5]
 			i = i + 10
 			return vals
-		elseif opt == 0 or opt == 1 then
+		elseif opt == 1 then
 			-- nop end eol option have length 1
 			i = i + 1
+		elseif opt == 0 then	
+			return false
 		else
 			-- other options
-			i = i + pkt.payload.uint8[i + 1] -- increment by option length
+			local inc = pkt.payload.uint8[i + 1] -- increment by option length
+			if inc == 0 then
+				log:warn("This shouldn't happen: wrong TCP options format")
+				return false
+			end
+			i = i + inc
 		end
 	end
 	return false
@@ -468,7 +480,11 @@ function mod.createSynAckToClient(txBuf, rxPkt)
 	local cookie = calculateCookie(rxPkt)
 
 	-- MAC addresses
-	txPkt.eth.dst = CLIENT_MAC
+	if rxPkt.eth.src:get() == CLIENT_MAC_64 then
+		txPkt.eth.dst = CLIENT_MAC
+	else
+		txPkt.eth.dst = ATTACKER_MAC
+	end
 	txPkt.eth.src = PROXY_MAC
 
 	-- IP addresses
@@ -501,11 +517,11 @@ function mod.forwardTraffic(txBuf, rxBuf)
 	
 	-- determine direction for MAC translation
 	local txPkt = txBuf:getEthernetPacket()
-	local srcMac = txPkt.eth.src
-	if srcMac == CLIENT_MAC then
+	local srcMac = txPkt.eth.src:get()
+	if srcMac == CLIENT_MAC_64 then
 		txPkt.eth.dst = SERVER_MAC
 		txPkt.eth.src = PROXY_MAC
-	elseif srcMac == SERVER_MAC then
+	elseif srcMac == SERVER_MAC_64 then
 		txPkt.eth.dst = CLIENT_MAC
 		txPkt.eth.src = PROXY_MAC
 	end
