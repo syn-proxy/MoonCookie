@@ -476,11 +476,7 @@ function mod.createSynAckToClient(txBuf, rxPkt)
 	local cookie = calculateCookie(rxPkt)
 
 	-- MAC addresses
-	if rxPkt.eth.src == CLIENT_MAC then
-		txPkt.eth.dst = CLIENT_MAC
-	else
-		txPkt.eth.dst = ATTACKER_MAC
-	end
+	txPkt.eth.dst = rxPkt.eth.src
 	txPkt.eth.src = PROXY_MAC
 
 	-- IP addresses
