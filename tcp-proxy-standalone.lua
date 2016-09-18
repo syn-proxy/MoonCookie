@@ -90,9 +90,9 @@ local createResponseRst = auth.createResponseRst
 ---------------------------------------------------
 
 function tcpProxySlave(dev, strategy)
-	log:setLevel("DEBUG")
+	--log:setLevel("DEBUG")
 	--log:setLevel("WARN")
-	--log:setLevel("ERROR")
+	log:setLevel("ERROR")
 
 	local maxBurstSize = 63
 
