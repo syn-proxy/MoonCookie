@@ -1,3 +1,7 @@
+CAUTION
+=======
+As of now, proof of concept, contains hard coded MACs/IPs. ARP task and other required features for a first release are coming soon.
+
 MoonCookie is a TCP SYN proxy implementation.
 It currently supports TCP SYN cookies and three different SYN authentication strategies.
 
