@@ -4,9 +4,9 @@ It currently supports TCP SYN cookies and three different SYN authentication str
 Installation
 ============
 1. `git submodule update --init --recursive`
-2. Compile Phobos in the `phobos` submodule. Follow instructions there.
+2. Compile libmoon in the `libmoon` submodule. Follow instructions there.
 3. `cd build ; cmake .. ; make ; cd ..`
-4. ./phobos/build/phobos tcp-proxy-standalone.lua <params>
+4. ./libmoon/build/libmoon mooncookie.lua <params>
 
 Usage
 =====

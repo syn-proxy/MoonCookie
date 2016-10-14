@@ -1,4 +1,4 @@
-local phobos	= require "phobos"
+local libmoon	= require "libmoon"
 local memory	= require "memory"
 local device	= require "device"
 local stats		= require "stats"
@@ -55,10 +55,10 @@ function master(args, ...)
 	device.waitForLinks()
 
 	for i = 1, args.threads do
-		phobos.startTask("tcpProxySlave", dev, args.strategy, i - 1)
+		libmoon.startTask("tcpProxySlave", dev, args.strategy, i - 1)
 	end
 	stats.startStatsTask{dev} 
-	phobos.waitForTasks()
+	libmoon.waitForTasks()
 end
 
 
@@ -168,7 +168,7 @@ function tcpProxySlave(dev, strategy, threadId)
 	-- main event loop
 	-------------------------------------------------------------
 	log:info('Starting TCP Proxy with thread ID ' .. threadId)
-	while phobos.running() do
+	while libmoon.running() do
 		rx = lRXQueue:tryRecv(lRXBufs, 1)
 		numSynAck = 0
 		numAck = 0
