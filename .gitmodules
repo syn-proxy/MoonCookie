@@ -1,6 +1,6 @@
 [submodule "sparsehash"]
 	path = sparsehash
 	url = http://github.com/sparsehash/sparsehash.git
-[submodule "phobos"]
-	path = phobos
-	url = https://github.com/Phobos-Framework/phobos
+[submodule "libmoon"]
+	path = libmoon
+	url = http://github.com/libmoon/libmoon
