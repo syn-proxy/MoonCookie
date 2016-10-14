@@ -3,4 +3,4 @@
 	url = http://github.com/sparsehash/sparsehash.git
 [submodule "phobos"]
 	path = phobos
-	url = http://github.com/Phobos-Framework/phobos
+	url = https://github.com/Phobos-Framework/phobos
