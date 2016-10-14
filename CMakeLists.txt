@@ -7,14 +7,14 @@ SET(PRJ mooncookie)
 
 FILE(GLOB SOURCES src/*.c src/*.cpp)
 
-SET(PHOBOS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/phobos)
+SET(LIBMOON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libmoon)
 
 INCLUDE_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/src
-	${PHOBOS_DIR}/deps/dpdk/x86_64-native-linuxapp-gcc/include
-	${PHOBOS_DIR}/deps/luajit/src
-	${PHOBOS_DIR}/lib
-	${PHOBOS_DIR}/src
+	${LIBMOON_DIR}/deps/dpdk/x86_64-native-linuxapp-gcc/include
+	${LIBMOON_DIR}/deps/luajit/src
+	${LIBMOON_DIR}/lib
+	${LIBMOON_DIR}/src
 )
 
 ADD_LIBRARY(${PRJ} SHARED ${SOURCES})
