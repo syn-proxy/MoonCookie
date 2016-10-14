@@ -40,15 +40,24 @@ function configure(parser)
 			strats = strats .. "|" .. k
 		end
 	end
-	parser:argument("strategy", "Mitigation strategy [" .. strats .. "]"):args("1"):convert(STRAT):default('cookie')
+	parser:option("-s --strategy", "Mitigation strategy [" .. strats .. "]"):args("1"):convert(STRAT):default('cookie')
+	parser:option("-t --threads", "Number of threads to start"):args(1):convert(tonumber):default(1)
 	return parser:parse()
 end
 
 function master(args, ...)
-	local dev = device.config{ port = args.dev }
-	dev:wait()
-	phobos.startTask("tcpProxySlave", dev, args.strategy)
-	
+	local dev = device.config{ 
+		port = args.dev ,
+		txQueues = args.threads,
+		rxQueues = args.threads,
+		rssQueues = args.threads
+	}
+	device.waitForLinks()
+
+	for i = 1, args.threads do
+		phobos.startTask("tcpProxySlave", dev, args.strategy, i - 1)
+	end
+	stats.startStatsTask{dev} 
 	phobos.waitForTasks()
 end
 
@@ -89,23 +98,22 @@ local createResponseRst = auth.createResponseRst
 -- slave
 ---------------------------------------------------
 
-function tcpProxySlave(dev, strategy)
-	--log:setLevel("DEBUG")
+function tcpProxySlave(dev, strategy, threadId)
 	--log:setLevel("WARN")
 	log:setLevel("ERROR")
 
 	local maxBurstSize = 63
 
-	lTXStats = stats:newDevTxCounter(dev, "plain")
-	lRXStats = stats:newDevRxCounter(dev, "plain")
+	--lTXStats = stats:newDevTxCounter("TX for thread #" .. threadId, dev, "plain")
+	--lRXStats = stats:newDevRxCounter("RX for thread #" .. threadId, dev, "plain")
 	
 	-- RX buffers for left
-	local lRXQueue = dev:getRxQueue(0)
+	local lRXQueue = dev:getRxQueue(threadId)
 	local lRXMem = memory.createMemPool()	
 	local lRXBufs = lRXMem:bufArray(maxBurstSize)
 
 	-- TX buffers
-	local lTXQueue = dev:getTxQueue(0)
+	local lTXQueue = dev:getTxQueue(threadId)
 
 	-- buffer for cookie syn/ack to left
 	local numSynAck = 0
@@ -159,7 +167,7 @@ function tcpProxySlave(dev, strategy)
 	-------------------------------------------------------------
 	-- main event loop
 	-------------------------------------------------------------
-	log:info('Starting TCP Proxy')
+	log:info('Starting TCP Proxy with thread ID ' .. threadId)
 	while phobos.running() do
 		rx = lRXQueue:tryRecv(lRXBufs, 1)
 		numSynAck = 0
@@ -384,12 +392,12 @@ function tcpProxySlave(dev, strategy)
 			lRXBufs:freeAll(rx)
 		end
 
-		lRXStats:update()
-		lTXStats:update()
+		--lRXStats:update()
+		--lTXStats:update()
 	end
 	
-	lRXStats:finalize()
-	lTXStats:finalize()
+	--lRXStats:finalize()
+	--lTXStats:finalize()
 
 	log:info('Slave done')
 end
