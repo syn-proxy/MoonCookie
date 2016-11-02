@@ -4,16 +4,12 @@ local device	= require "device"
 local stats		= require "stats"
 local log		= require "log"
 local ffi		= require "ffi"
-local dpdkc 	= require "dpdkc"
 local proto		= require "proto/proto"
 local check		= require "proto/packetChecks"
 
 -- tcp SYN defense strategies
 local cookie	= require "src/synCookie"
 local auth		= require "src/synAuthentication"
-
--- utility
-local bor, band, bnot, rshift, lshift= bit.bor, bit.band, bit.bnot, bit.rshift, bit.lshift
 
 -- Adjust luajit parameters
 local jit = require "jit"
@@ -22,13 +18,13 @@ jit.opt.start("maxrecord=10000", "maxirconst=1000", "loopunroll=40")
 -- implemented strategies
 local STRAT = {
 	cookie 		= 1,
-	auth		= 2,
+	auth_invalid= 2,
 	auth_full	= 3,
 	auth_ttl	= 4,
 }
 
 function configure(parser)
-	parser:description("TCP SYN Proxy")
+	parser:description("MoonCookie - a TCP SYN Proxy")
 	parser:argument("dev", "Device to use"):args(1):convert(tonumber)
 	strats = ""
 	first = true
@@ -55,7 +51,7 @@ function master(args, ...)
 	device.waitForLinks()
 
 	for i = 1, args.threads do
-		libmoon.startTask("tcpProxySlave", dev, args.strategy, i - 1)
+		libmoon.startTask("synProxyTask", dev, args.strategy, i - 1)
 	end
 	stats.startStatsTask{dev} 
 	libmoon.waitForTasks()
@@ -66,47 +62,47 @@ end
 -- check packet type
 ----------------------------------------------------
 
-local isIP4 = check.isIP4
-local isTcp4 = check.isTcp4
+local isIP4 	= check.isIP4
+local isTcp4 	= check.isTcp4
 
 
 -------------------------------------------------------------------------------------------
 ---- Cookie
 -------------------------------------------------------------------------------------------
 
-local verifyCookie = cookie.verifyCookie
+local verifyCookie 				= cookie.verifyCookie
 local sequenceNumberTranslation = cookie.sequenceNumberTranslation
-local createSynAckToClient = cookie.createSynAckToClient
-local createSynToServer = cookie.createSynToServer
-local createAckToServer = cookie.createAckToServer
-local forwardTraffic = cookie.forwardTraffic
-local forwardStalled = cookie.forwardStalled
-local calculateCookiesBatched = cookie.calculateCookiesBatched
+local createSynAckToClient 		= cookie.createSynAckToClient
+local createSynToServer 		= cookie.createSynToServer
+local createAckToServer 		= cookie.createAckToServer
+local forwardTraffic 			= cookie.forwardTraffic
+local forwardStalled 			= cookie.forwardStalled
+local calculateCookiesBatched 	= cookie.calculateCookiesBatched
 
 
 -------------------------------------------------------------------------------------------
 ---- Syn Auth
 -------------------------------------------------------------------------------------------
 
-local forwardTrafficAuth = auth.forwardTraffic
-local createResponseAuth = auth.createResponseAuth
-local createResponseAuthFull = auth.createResponseAuthFull
-local createResponseRst = auth.createResponseRst
+local forwardTrafficAuth 		= auth.forwardTraffic
+local createResponseAuthInvalid	= auth.createResponseAuthInvalid
+local createResponseAuthFull 	= auth.createResponseAuthFull
+local createResponseRst 		= auth.createResponseRst
 
 
 ---------------------------------------------------
--- slave
+-- task
 ---------------------------------------------------
 
-function tcpProxySlave(dev, strategy, threadId)
-	--log:setLevel("WARN")
-	log:setLevel("ERROR")
+local function info(msg, id)
+	print(getColorCode(id + 1) .. '[MoonCookie: id=' .. id .. '] ' .. getColorCode("white") .. msg)
+end
+
+function synProxyTask(dev, strategy, threadId)
+	info('Initialising SYN proxy', threadId)
 
 	local maxBurstSize = 63
 
-	--lTXStats = stats:newDevTxCounter("TX for thread #" .. threadId, dev, "plain")
-	--lRXStats = stats:newDevRxCounter("RX for thread #" .. threadId, dev, "plain")
-	
 	-- RX buffers for left
 	local lRXQueue = dev:getRxQueue(threadId)
 	local lRXMem = memory.createMemPool()	
@@ -167,7 +163,7 @@ function tcpProxySlave(dev, strategy, threadId)
 	-------------------------------------------------------------
 	-- main event loop
 	-------------------------------------------------------------
-	log:info('Starting TCP Proxy with thread ID ' .. threadId)
+	info('Starting SYN proxy', threadId)
 	while libmoon.running() do
 		rx = lRXQueue:tryRecv(lRXBufs, 1)
 		numSynAck = 0
@@ -185,7 +181,7 @@ function tcpProxySlave(dev, strategy, threadId)
 			else -- TCP
 				--lRXBufs[i]:dump()
 				-- TCP SYN Authentication strategy
-				if strategy == STRAT['auth'] then
+				if strategy == STRAT['auth_invalid'] then
 					-- send wrong acknowledgement number on unverified SYN
 					local forward = false
 					if lRXPkt.tcp:getSyn() and not lRXPkt.tcp:getAck() then
@@ -197,7 +193,7 @@ function tcpProxySlave(dev, strategy, threadId)
 								lTXAuthBufs:allocN(60, rx - (i - 1))
 							end
 							numAuth = numAuth + 1
-							createResponseAuth(lTXAuthBufs[numAuth], lRXPkt)
+							createResponseAuthInvalid(lTXAuthBufs[numAuth], lRXPkt)
 						end
 					else
 						if bitMapAuth:isWhitelisted(lRXPkt) then
@@ -391,13 +387,6 @@ function tcpProxySlave(dev, strategy, threadId)
 			-- no rx packets reused --> free
 			lRXBufs:freeAll(rx)
 		end
-
-		--lRXStats:update()
-		--lTXStats:update()
 	end
-	
-	--lRXStats:finalize()
-	--lTXStats:finalize()
-
-	log:info('Slave done')
+	info('Finished SYN proxy', threadId)
 end

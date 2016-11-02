@@ -45,14 +45,14 @@ local function setSwappedAddresses(txPkt, rxPkt)
 	txPkt.tcp:setDst(rxPkt.tcp:getSrc())
 end
 
-function mod.createResponseAuth(txBuf, rxPkt)
-	--log:debug('crafting seq vio')
+function mod.createResponseAuthInvalid(txBuf, rxPkt)
 	local txPkt = txBuf:getTcp4Packet()
 
 	setSwappedAddresses(txPkt, rxPkt)
 
 	-- set violating ack number
-	txPkt.tcp:setAckNumber(rxPkt.tcp:getSeqNumber() - 1) -- violation => AckNumber != SeqNumber + 1
+	txPkt.tcp:setAckNumber(rxPkt.tcp:getSeqNumber() - 1) 
+	-- violation => AckNumber != SeqNumber + 1
 end
 
 function mod.createResponseRst(txBuf, rxPkt)
@@ -112,7 +112,7 @@ end
 
 
 ----------------------------------------------------------------------------------------------------------------------------
----- Bit map for syn (full) authentication
+---- Bit map for syn authentication (invalid|full)
 ----------------------------------------------------------------------------------------------------------------------------
 
 ffi.cdef [[
@@ -167,7 +167,7 @@ end
 
 
 ----------------------------------------------------------------------------------------------------------------------------
----- Bit map for syn TTL authentication
+---- Bit map for syn authentication TTL
 ----------------------------------------------------------------------------------------------------------------------------
 
 ffi.cdef [[
