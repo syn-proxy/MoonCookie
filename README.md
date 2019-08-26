@@ -3,6 +3,7 @@ It currently supports TCP SYN cookies and three different SYN authentication str
 
 Installation
 ============
+0. apt install libsiphash-dev
 1. `git submodule update --init --recursive`
 2. Compile libmoon in the `libmoon` submodule. Follow instructions there.
 3. `cd build ; cmake .. ; make ; cd ..`
