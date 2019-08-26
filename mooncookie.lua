@@ -163,7 +163,7 @@ function synProxyTask(dev, strategy, threadId)
 	-------------------------------------------------------------
 	-- main event loop
 	-------------------------------------------------------------
-	info('Starting SYN proxy', threadId)
+	info('Starting SYN proxy using ' .. strategy, threadId)
 	while libmoon.running() do
 		rx = lRXQueue:tryRecv(lRXBufs, 1)
 		numSynAck = 0
