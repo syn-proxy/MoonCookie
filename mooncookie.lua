@@ -262,7 +262,7 @@ function synProxyTask(dev, strategy, threadId)
 								lTXAuthBufs:allocN(60, rx - (i - 1))
 							end
 							numAuth = numAuth + 1
-							createResponseAuth(lTXAuthBufs[numAuth], lRXPkt)
+							createResponseAuthInvalid(lTXAuthBufs[numAuth], lRXPkt)
 						end
 					else
 						if bitMapAuthTtl:isWhitelisted(lRXPkt) then
