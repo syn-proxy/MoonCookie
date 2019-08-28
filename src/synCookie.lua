@@ -30,9 +30,9 @@ local clib = ffi.load("build/mooncookie")
 -- right: "protected" side, connection to server(s), only filtered traffic comes here
 
 local SERVER_IP = parseIP4Address("10.0.0.1")
-local CLIENT_MAC = parseMacAddress("a0:36:9f:27:f7:78")
+local CLIENT_MAC = parseMacAddress("00:1b:21:be:39:16")
 local CLIENT_MAC_64 = CLIENT_MAC:get()
-local ATTACKER_MAC = parseMacAddress("ac:1f:6b:7c:88:f3")
+local ATTACKER_MAC = parseMacAddress("00:1b:21:be:39:14")
 local ATTACKER_MAC_64 = ATTACKER_MAC:get()
 local SERVER_MAC = parseMacAddress("ac:1f:6b:7a:71:cc")
 local SERVER_MAC_64 = SERVER_MAC:get()
