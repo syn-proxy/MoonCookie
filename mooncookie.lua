@@ -297,7 +297,7 @@ function synProxyTask(devL, devR, strategy, threadId)
 							rTXForwardBufs:allocN(60, rx - (i - 1))
 						end
 						numForwardR = numForwardR + 1
-						forwardTrafficAuth(rTXForwardBufs[numForward], lRXBufs[i])
+						forwardTrafficAuth(rTXForwardBufs[numForwardR], lRXBufs[i])
 					end
 				else
 				-- TCP SYN Cookie strategy

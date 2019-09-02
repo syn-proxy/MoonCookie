@@ -21,23 +21,17 @@ local mod = {}
 ---- Packet modification and crafting for SYN authentication
 -------------------------------------------------------------------------------------------
 
-local SERVER_IP = parseIP4Address("192.168.1.1")
-local CLIENT_MAC = parseMacAddress("90:e2:ba:98:58:78")
-local CLIENT_MAC_64 = CLIENT_MAC:get()
-local SERVER_MAC = parseMacAddress("90:e2:ba:98:88:e8")
-local PROXY_MAC  = parseMacAddress("90:e2:ba:98:88:e9") 
-
 local SERVER_IP = parseIP4Address("10.0.0.1")
-local CLIENT_MAC = parseMacAddress("a0:36:9f:27:f7:78")
 local CLIENT_MAC = parseMacAddress("00:1b:21:be:39:16")
 local CLIENT_MAC_64 = CLIENT_MAC:get()
-local ATTACKER_MAC = parseMacAddress("ac:1f:6b:7c:88:f3")
 local ATTACKER_MAC = parseMacAddress("00:1b:21:be:39:14")
 local ATTACKER_MAC_64 = ATTACKER_MAC:get()
 local SERVER_MAC = parseMacAddress("ac:1f:6b:7a:71:cc")
 local SERVER_MAC_64 = SERVER_MAC:get()
-local PROXY_MAC  = parseMacAddress("ac:1f:6b:4d:a3:e5") 
-local PROXY_MAC_64 = PROXY_MAC:get()
+local PROXY_MAC_LEFT  = parseMacAddress("ac:1f:6b:4d:a3:e5") 
+local PROXY_MAC_LEFT_64 = PROXY_MAC_LEFT:get()
+local PROXY_MAC_RIGHT  = parseMacAddress("00:1b:21:be:38:ee") 
+local PROXY_MAC_RIGHT_64 = PROXY_MAC_RIGHT:get()
 
 function mod.forwardTraffic(txBuf, rxBuf)
 	cookie.forwardTraffic(txBuf, rxBuf)
