@@ -36,8 +36,10 @@ local ATTACKER_MAC = parseMacAddress("00:1b:21:be:39:14")
 local ATTACKER_MAC_64 = ATTACKER_MAC:get()
 local SERVER_MAC = parseMacAddress("ac:1f:6b:7a:71:cc")
 local SERVER_MAC_64 = SERVER_MAC:get()
-local PROXY_MAC  = parseMacAddress("ac:1f:6b:4d:a3:e5") 
-local PROXY_MAC_64 = PROXY_MAC:get()
+local PROXY_MAC_LEFT  = parseMacAddress("ac:1f:6b:4d:a3:e5") 
+local PROXY_MAC_LEFT_64 = PROXY_MAC_LEFT:get()
+local PROXY_MAC_RIGHT  = parseMacAddress("00:1b:21:be:38:ee") 
+local PROXY_MAC_RIGHT_64 = PROXY_MAC_RIGHT:get()
 
 local mod = {}
 
@@ -296,11 +298,12 @@ function mod.sequenceNumberTranslation(diff, rxBuf, txBuf, rxPkt, txPkt)
 	if leftToRight then
 		txPkt.tcp:setAckNumber(rxPkt.tcp:getAckNumber() + diff)
 		txPkt.eth.dst = SERVER_MAC
+		txPkt.eth.src = PROXY_MAC_RIGHT
 	else
 		txPkt.tcp:setSeqNumber(rxPkt.tcp:getSeqNumber() - diff)
 		txPkt.eth.dst = CLIENT_MAC
+		txPkt.eth.src = PROXY_MAC_LEFT
 	end
-	txPkt.eth.src = PROXY_MAC
 
 	-- reset IP checksum for offloading
 	txPkt.ip4:setChecksum()
@@ -320,7 +323,7 @@ function mod.forwardStalled(diff, txBuf)
 	local txPkt = txBuf:getTcp4Packet()
 	txPkt.tcp:setAckNumber(txPkt.tcp:getAckNumber() + diff)
 	txPkt.eth.dst = SERVER_MAC
-	txPkt.eth.src = PROXY_MAC
+	txPkt.eth.src = PROXY_MAC_RIGHT
 	
 	-- reset IP checksum for offloading
 	txPkt.ip4:setChecksum()
@@ -363,7 +366,9 @@ function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 	local size = 54
 	
 	-- copy data
+	log:debug('copy')
 	ffi.copy(txBuf:getData(), rxBuf:getData(), size)
+	log:debug('copyd')
 	
 	-- adjust some members: sequency number, flags, checksum, length fields
 	local txPkt = txBuf:getTcp4Packet()
@@ -373,7 +378,7 @@ function mod.createSynToServer(txBuf, rxBuf, mss, wsopt)
 	
 	--translate MAC
 	txPkt.eth.dst = SERVER_MAC
-	txPkt.eth.src = PROXY_MAC
+	txPkt.eth.src = PROXY_MAC_RIGHT
 	-- reduce seq num by 1 as during handshake it will be increased by 1 (in SYN/ACK)
 	-- this way, it does not have to be translated at all
 	txPkt.tcp:setSeqNumber(txPkt.tcp:getSeqNumber() - 1)
@@ -449,7 +454,7 @@ function mod.createAckToServer(txBuf, rxBuf, rxPkt)
 	local txPkt = txBuf:getTcp4Packet()
 
 	-- mac addresses
-	txPkt.eth.src = PROXY_MAC
+	txPkt.eth.src = PROXY_MAC_RIGHT
 	txPkt.eth.dst = SERVER_MAC
 	
 	-- ip addresses
@@ -485,7 +490,7 @@ function mod.createSynAckToClient(txBuf, rxPkt)
 	else
 		txPkt.eth.dst = ATTACKER_MAC
 	end
-	txPkt.eth.src = PROXY_MAC
+	txPkt.eth.src = PROXY_MAC_LEFT
 
 	-- IP addresses
 	txPkt.ip4.dst = rxPkt.ip4.src
@@ -520,10 +525,10 @@ function mod.forwardTraffic(txBuf, rxBuf)
 	local srcMac = txPkt.eth.src:get()
 	if srcMac == CLIENT_MAC_64 then
 		txPkt.eth.dst = SERVER_MAC
-		txPkt.eth.src = PROXY_MAC
+		txPkt.eth.src = PROXY_MAC_RIGHT
 	elseif srcMac == SERVER_MAC_64 then
 		txPkt.eth.dst = CLIENT_MAC
-		txPkt.eth.src = PROXY_MAC
+		txPkt.eth.src = PROXY_MAC_LEFT
 	end
 end
 

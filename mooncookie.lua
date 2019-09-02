@@ -25,7 +25,8 @@ local STRAT = {
 
 function configure(parser)
 	parser:description("MoonCookie - a TCP SYN Proxy")
-	parser:argument("dev", "Device to use"):args(1):convert(tonumber)
+	parser:argument("devL", "Left device to use"):args(1):convert(tonumber)
+	parser:argument("devR", "Right device to use"):args(1):convert(tonumber)
 	strats = ""
 	first = true
 	for k,_ in pairs(STRAT) do
@@ -42,8 +43,14 @@ function configure(parser)
 end
 
 function master(args, ...)
-	local dev = device.config{ 
-		port = args.dev ,
+	local devL = device.config{ 
+		port = args.devL ,
+		txQueues = args.threads,
+		rxQueues = args.threads,
+		rssQueues = args.threads
+	}
+	local devR = device.config{ 
+		port = args.devR ,
 		txQueues = args.threads,
 		rxQueues = args.threads,
 		rssQueues = args.threads
@@ -51,9 +58,9 @@ function master(args, ...)
 	device.waitForLinks()
 
 	for i = 1, args.threads do
-		libmoon.startTask("synProxyTask", dev, args.strategy, i - 1)
+		libmoon.startTask("synProxyTask", devL, devR, args.strategy, i - 1)
 	end
-	stats.startStatsTask{dev} 
+	stats.startStatsTask{devL, devR} 
 	libmoon.waitForTasks()
 end
 
@@ -98,18 +105,25 @@ local function info(msg, id)
 	print(getColorCode(id + 1) .. '[MoonCookie: id=' .. id .. '] ' .. getColorCode("white") .. msg)
 end
 
-function synProxyTask(dev, strategy, threadId)
+function synProxyTask(devL, devR, strategy, threadId)
+	log:setLevel("DEBUG")
 	info('Initialising SYN proxy', threadId)
 
 	local maxBurstSize = 63
 
 	-- RX buffers for left
-	local lRXQueue = dev:getRxQueue(threadId)
+	local lRXQueue = devL:getRxQueue(threadId)
 	local lRXMem = memory.createMemPool()	
 	local lRXBufs = lRXMem:bufArray(maxBurstSize)
 
+	-- RX buffers for right
+	local rRXQueue = devR:getRxQueue(threadId)
+	local rRXMem = memory.createMemPool()	
+	local rRXBufs = rRXMem:bufArray(maxBurstSize)
+
 	-- TX buffers
-	local lTXQueue = dev:getTxQueue(threadId)
+	local lTXQueue = devL:getTxQueue(threadId)
+	local rTXQueue = devR:getTxQueue(threadId)
 
 	-- buffer for cookie syn/ack to left
 	local numSynAck = 0
@@ -120,8 +134,10 @@ function synProxyTask(dev, strategy, threadId)
 	local rTXAckBufs = cookie.getAckBufs()
 	
 	-- buffer for forwarding
-	local numForward = 0 
+	local numForwardL = 0 
 	local lTXForwardBufs = cookie.getForwardBufs()
+	local numForwardR = 0 
+	local rTXForwardBufs = cookie.getForwardBufs()
 	
 	-- buffer for syn auth answer to left
 	local numAuth = 0
@@ -164,20 +180,23 @@ function synProxyTask(dev, strategy, threadId)
 	-- main event loop
 	-------------------------------------------------------------
 	info('Starting SYN proxy using ' .. strategy, threadId)
+	log:debug('strting')
 	while libmoon.running() do
+		-- LEFT side processing
 		rx = lRXQueue:tryRecv(lRXBufs, 1)
 		numSynAck = 0
 		numAck = 0
-		numForward = 0
+		numForwardL = 0
+		numForwardR = 0
 		numAuth = 0
 		for i = 1, rx do
 			local lRXPkt = lRXBufs[i]:getTcp4Packet()
 			--lRXBufs[i]:dump()
 			if not isTcp4(lRXPkt) then
-				--log:debug('Sending packet that is not TCP')
+				log:debug('Sending packet that is not TCP from left')
 				txNotTcpBufs:alloc(60)
 				forwardTraffic(txNotTcpBufs[1], lRXBufs[i])
-				lTXQueue:sendN(txNotTcpBufs, 1)
+				rTXQueue:sendN(txNotTcpBufs, 1)
 			else -- TCP
 				--lRXBufs[i]:dump()
 				-- TCP SYN Authentication strategy
@@ -205,11 +224,11 @@ function synProxyTask(dev, strategy, threadId)
 						end
 					end
 					if forward then
-						if numForward == 0 then
-							lTXForwardBufs:allocN(60, rx - (i - 1))
+						if numForwardR == 0 then
+							rTXForwardBufs:allocN(60, rx - (i - 1))
 						end
-						numForward = numForward + 1
-						forwardTrafficAuth(lTXForwardBufs[numForward], lRXBufs[i])
+						numForwardR = numForwardR + 1
+						forwardTrafficAuth(rTXForwardBufs[numForwardR], lRXBufs[i])
 					end
 				elseif strategy == STRAT['auth_full'] then
 					-- do a full handshake for whitelisting, then proxy sends rst
@@ -243,11 +262,11 @@ function synProxyTask(dev, strategy, threadId)
 						end
 					end
 					if forward then
-						if numForward == 0 then
-							lTXForwardBufs:allocN(60, rx - (i - 1))
+						if numForwardR == 0 then
+							rTXForwardBufs:allocN(60, rx - (i - 1))
 						end
-						numForward = numForward + 1
-						forwardTrafficAuth(lTXForwardBufs[numForward], lRXBufs[i])
+						numForwardR = numForwardR + 1
+						forwardTrafficAuth(rTXForwardBufs[numForwardR], lRXBufs[i])
 					end
 				elseif strategy == STRAT['auth_ttl'] then
 					-- send wrong acknowledgement number on unverified SYN
@@ -274,78 +293,61 @@ function synProxyTask(dev, strategy, threadId)
 						end
 					end
 					if forward then
-						if numForward == 0 then
-							lTXForwardBufs:allocN(60, rx - (i - 1))
+						if numForwardR == 0 then
+							rTXForwardBufs:allocN(60, rx - (i - 1))
 						end
-						numForward = numForward + 1
-						forwardTrafficAuth(lTXForwardBufs[numForward], lRXBufs[i])
+						numForwardR = numForwardR + 1
+						forwardTrafficAuth(rTXForwardBufs[numForward], lRXBufs[i])
 					end
 				else
 				-- TCP SYN Cookie strategy
 					if lRXPkt.tcp:getSyn() then
 						if not lRXPkt.tcp:getAck() then -- SYN -> send SYN/ACK
-							--log:debug('Received SYN from left')
+							log:debug('Received SYN from left')
 							if numSynAck == 0 then
 								lTXSynAckBufs:allocN(60, rx - (i - 1))
 							end
 							numSynAck = numSynAck + 1
 							createSynAckToClient(lTXSynAckBufs[numSynAck], lRXPkt)
-						else -- SYN/ACK from right -> send ack + stall table lookup
-							--log:debug('Received SYN/ACK from server, sending ACK back')
-							local diff, stalled = stateCookie:setRightVerified(lRXPkt)
-							if diff then
-								-- ack to server
-								rTXAckBufs:allocN(60, 1)
-								createAckToServer(rTXAckBufs[1], lRXBufs[i], lRXPkt)
-								rTXAckBufs[1]:offloadTcpChecksum()
-								lTXQueue:sendSingle(rTXAckBufs[1])
-									
-								if stalled then
-									forwardStalled(diff, stalled)
-									stalled:offloadTcpChecksum()
-									lTXQueue:sendSingle(stalled)
-								end
-							else
-								log:debug("right verify failed")
-							end
+						else
+							log:debug("ignore syn/ack from left")
 						end
-					-- any verified packet from server
 					else -- check verified status
 						local diff, stalled = stateCookie:isVerified(lRXPkt) 
 						if not diff and lRXPkt.tcp:getAck() then -- finish handshake with left, start with right
-							--log:debug("verifying cookie")
+							log:debug("verifying cookie")
 							local mss, wsopt = verifyCookie(lRXPkt)
 							if mss then
-								--log:debug('Received valid cookie from left, starting handshake with server')
+								log:debug('Received valid cookie from left, starting handshake with server')
 								
 								stateCookie:setLeftVerified(lRXPkt)
 								-- connection is left verified, start handshake with right
-								if numForward == 0 then
-									lTXForwardBufs:allocN(60, rx - (i - 1))
+								if numForwardR == 0 then
+									rTXForwardBufs:allocN(60, rx - (i - 1))
 								end
-								numForward = numForward + 1
-								createSynToServer(lTXForwardBufs[numForward], lRXBufs[i], mss, wsopt)
+								numForwardR = numForwardR + 1
+								createSynToServer(rTXForwardBufs[numForwardR], lRXBufs[i], mss, wsopt)
 							else
-								--log:warn('Wrong cookie, dropping packet ')
+								log:warn('Wrong cookie, dropping packet ')
 								-- drop, and done
 								-- most likely simply the timestamp timed out
 								-- but it might also be a DoS attack that tried to guess the cookie
 							end
 						elseif not diff then
 							-- not verified, not ack -> drop
-							--log:warn("dropping unverfied not ack packet")
+							log:warn("dropping unverfied not ack packet from left")
 						elseif diff == "stall" then
 							stallBufs:allocN(60, 1)
 							ffi.copy(stallBufs[1]:getData(), lRXBufs[i]:getData(), lRXBufs[i]:getSize())
 							stallBufs[1]:setSize(lRXBufs[i]:getSize())
 							stalled.stalled = stallBufs[1]
 						elseif diff then 
-							--log:debug('Received packet of verified connection, translating and forwarding')
-							if numForward == 0 then
-								lTXForwardBufs:allocN(60, rx - (i - 1))
+							log:debug('Received packet of verified connection from left, translating and forwarding')
+							if numForwardR == 0 then
+								rTXForwardBufs:allocN(60, rx - (i - 1))
 							end
-							numForward = numForward + 1
-							sequenceNumberTranslation(diff, lRXBufs[i], lTXForwardBufs[numForward], lRXPkt, lTXForwardBufs[numForward]:getTcp4Packet())
+							numForwardR = numForwardR + 1
+							sequenceNumberTranslation(diff, lRXBufs[i], rTXForwardBufs[numForwardR], lRXPkt, rTXForwardBufs[numForwardR]:getTcp4Packet())
 						else
 							-- should not happen
 							log:error('unhandled packet ' )
@@ -374,18 +376,104 @@ function synProxyTask(dev, strategy, threadId)
 			end
 			-- all strategies
 			-- send forwarded packets and free unused buffers
-			if numForward > 0 then
+			if numForwardR > 0 then
+				log:debug('sending r ' .. numForwardR)
 				-- authentication strategies dont touch anything above ethernet
 				-- offloading would set checksums to 0 -> dont
 				if strategy == STRAT['cookie'] then
-					lTXForwardBufs:offloadTcpChecksums(nil, nil, nil, numForward)
+					rTXForwardBufs:offloadTcpChecksums(nil, nil, nil, numForwardR)
 				end
-				lTXQueue:sendN(lTXForwardBufs, numForward)
-				lTXForwardBufs:freeAfter(numForward)
+				for a = 1, numForwardR do
+					rTXForwardBufs[a]:dump()
+				end
+				rTXQueue:sendN(rTXForwardBufs, numForwardR)
+				rTXForwardBufs:freeAfter(numForwardR)
 			end
 			
 			-- no rx packets reused --> free
 			lRXBufs:freeAll(rx)
+		end
+
+		-- RIGHT side processing
+		rx = rRXQueue:tryRecv(rRXBufs, 1)
+		for i = 1, rx do
+			local rRXPkt = rRXBufs[i]:getTcp4Packet()
+			--lRXBufs[i]:dump()
+			if not isTcp4(rRXPkt) then
+				--log:debug('Sending packet that is not TCP')
+				txNotTcpBufs:alloc(60)
+				forwardTraffic(txNotTcpBufs[1], rRXBufs[i])
+				lTXQueue:sendN(txNotTcpBufs, 1)
+			else -- TCP
+				--lRXBufs[i]:dump()
+				-- TCP SYN Authentication strategy -> forward
+				if strategy == STRAT['auth_invalid'] or strategy == STRAT['auth_full'] or strategy == STRAT['auth_ttl'] then
+					if numForwardL == 0 then
+						lTXForwardBufs:allocN(60, rx - (i - 1))
+					end
+					numForwardL = numForwardL + 1
+					forwardTrafficAuth(lTXForwardBufs[numForwardL], rRXBufs[i])
+				else
+				-- TCP SYN Cookie strategy
+					if rRXPkt.tcp:getSyn() then
+						if not rRXPkt.tcp:getAck() then -- SYN -> ignore
+							log:debug('Ignore SYN from right')
+						else -- SYN/ACK from right -> send ack + stall table lookup
+							log:debug('Received SYN/ACK from server, sending ACK back')
+							local diff, stalled = stateCookie:setRightVerified(rRXPkt)
+							if diff then
+								-- ack to server
+								rTXAckBufs:allocN(60, 1)
+								createAckToServer(rTXAckBufs[1], rRXBufs[i], rRXPkt)
+								rTXAckBufs[1]:offloadTcpChecksum()
+								rTXQueue:sendSingle(rTXAckBufs[1])
+									
+								if stalled then
+									log:debug('sending stalled')
+									forwardStalled(diff, stalled)
+									stalled:offloadTcpChecksum()
+									rTXQueue:sendSingle(stalled)
+								end
+							else
+								log:debug("right verify failed")
+							end
+						end
+					-- any verified packet from server
+					else -- check verified status
+						local diff, stalled = stateCookie:isVerified(rRXPkt) 
+						if not diff then
+							-- not verified, not syn/ack from right
+							log:warn("dropping unverfied not syn packet from right")
+						elseif diff then 
+							log:debug('Received packet of verified connection from right, translating and forwarding')
+							if numForwardL == 0 then
+								lTXForwardBufs:allocN(60, rx - (i - 1))
+							end
+							numForwardL = numForwardL + 1
+							sequenceNumberTranslation(diff, rRXBufs[i], lTXForwardBufs[numForwardL], rRXPkt, lTXForwardBufs[numForwardL]:getTcp4Packet())
+						else
+							-- should not happen
+							log:error('unhandled packet right' )
+						end
+					end
+				end
+			end
+		end
+		if rx > 0 then
+			-- all strategies
+			-- send forwarded packets and free unused buffers
+			if numForwardL > 0 then
+				-- authentication strategies dont touch anything above ethernet
+				-- offloading would set checksums to 0 -> dont
+				if strategy == STRAT['cookie'] then
+					lTXForwardBufs:offloadTcpChecksums(nil, nil, nil, numForwardL)
+				end
+				lTXQueue:sendN(lTXForwardBufs, numForwardL)
+				lTXForwardBufs:freeAfter(numForwardL)
+			end
+			
+			-- no rx packets reused --> free
+			rRXBufs:freeAll(rx)
 		end
 	end
 	info('Finished SYN proxy', threadId)
