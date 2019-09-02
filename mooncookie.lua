@@ -106,7 +106,7 @@ local function info(msg, id)
 end
 
 function synProxyTask(devL, devR, strategy, threadId)
-	log:setLevel("DEBUG")
+	--log:setLevel("DEBUG")
 	info('Initialising SYN proxy', threadId)
 
 	local maxBurstSize = 63
@@ -377,15 +377,14 @@ function synProxyTask(devL, devR, strategy, threadId)
 			-- all strategies
 			-- send forwarded packets and free unused buffers
 			if numForwardR > 0 then
-				log:debug('sending r ' .. numForwardR)
 				-- authentication strategies dont touch anything above ethernet
 				-- offloading would set checksums to 0 -> dont
 				if strategy == STRAT['cookie'] then
 					rTXForwardBufs:offloadTcpChecksums(nil, nil, nil, numForwardR)
 				end
-				for a = 1, numForwardR do
-					rTXForwardBufs[a]:dump()
-				end
+				--for a = 1, numForwardR do
+				--	rTXForwardBufs[a]:dump()
+				--end
 				rTXQueue:sendN(rTXForwardBufs, numForwardR)
 				rTXForwardBufs:freeAfter(numForwardR)
 			end
@@ -444,6 +443,8 @@ function synProxyTask(devL, devR, strategy, threadId)
 						if not diff then
 							-- not verified, not syn/ack from right
 							log:warn("dropping unverfied not syn packet from right")
+						elseif diff == "stall" then
+							--log:debug('stall from right')
 						elseif diff then 
 							log:debug('Received packet of verified connection from right, translating and forwarding')
 							if numForwardL == 0 then
