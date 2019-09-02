@@ -180,7 +180,7 @@ function synProxyTask(devL, devR, strategy, threadId)
 	-- main event loop
 	-------------------------------------------------------------
 	info('Starting SYN proxy using ' .. strategy, threadId)
-	log:debug('strting')
+	--log:debug('strting')
 	while libmoon.running() do
 		-- LEFT side processing
 		rx = lRXQueue:tryRecv(lRXBufs, 1)
@@ -193,7 +193,7 @@ function synProxyTask(devL, devR, strategy, threadId)
 			local lRXPkt = lRXBufs[i]:getTcp4Packet()
 			--lRXBufs[i]:dump()
 			if not isTcp4(lRXPkt) then
-				log:debug('Sending packet that is not TCP from left')
+				--log:debug('Sending packet that is not TCP from left')
 				txNotTcpBufs:alloc(60)
 				forwardTraffic(txNotTcpBufs[1], lRXBufs[i])
 				rTXQueue:sendN(txNotTcpBufs, 1)
@@ -303,22 +303,22 @@ function synProxyTask(devL, devR, strategy, threadId)
 				-- TCP SYN Cookie strategy
 					if lRXPkt.tcp:getSyn() then
 						if not lRXPkt.tcp:getAck() then -- SYN -> send SYN/ACK
-							log:debug('Received SYN from left')
+							--log:debug('Received SYN from left')
 							if numSynAck == 0 then
 								lTXSynAckBufs:allocN(60, rx - (i - 1))
 							end
 							numSynAck = numSynAck + 1
 							createSynAckToClient(lTXSynAckBufs[numSynAck], lRXPkt)
 						else
-							log:debug("ignore syn/ack from left")
+							--log:debug("ignore syn/ack from left")
 						end
 					else -- check verified status
 						local diff, stalled = stateCookie:isVerified(lRXPkt) 
 						if not diff and lRXPkt.tcp:getAck() then -- finish handshake with left, start with right
-							log:debug("verifying cookie")
+							--log:debug("verifying cookie")
 							local mss, wsopt = verifyCookie(lRXPkt)
 							if mss then
-								log:debug('Received valid cookie from left, starting handshake with server')
+								--log:debug('Received valid cookie from left, starting handshake with server')
 								
 								stateCookie:setLeftVerified(lRXPkt)
 								-- connection is left verified, start handshake with right
@@ -328,21 +328,21 @@ function synProxyTask(devL, devR, strategy, threadId)
 								numForwardR = numForwardR + 1
 								createSynToServer(rTXForwardBufs[numForwardR], lRXBufs[i], mss, wsopt)
 							else
-								log:warn('Wrong cookie, dropping packet ')
+								--log:warn('Wrong cookie, dropping packet ')
 								-- drop, and done
 								-- most likely simply the timestamp timed out
 								-- but it might also be a DoS attack that tried to guess the cookie
 							end
 						elseif not diff then
 							-- not verified, not ack -> drop
-							log:warn("dropping unverfied not ack packet from left")
+							--log:warn("dropping unverfied not ack packet from left")
 						elseif diff == "stall" then
 							stallBufs:allocN(60, 1)
 							ffi.copy(stallBufs[1]:getData(), lRXBufs[i]:getData(), lRXBufs[i]:getSize())
 							stallBufs[1]:setSize(lRXBufs[i]:getSize())
 							stalled.stalled = stallBufs[1]
 						elseif diff then 
-							log:debug('Received packet of verified connection from left, translating and forwarding')
+							--log:debug('Received packet of verified connection from left, translating and forwarding')
 							if numForwardR == 0 then
 								rTXForwardBufs:allocN(60, rx - (i - 1))
 							end
@@ -416,9 +416,9 @@ function synProxyTask(devL, devR, strategy, threadId)
 				-- TCP SYN Cookie strategy
 					if rRXPkt.tcp:getSyn() then
 						if not rRXPkt.tcp:getAck() then -- SYN -> ignore
-							log:debug('Ignore SYN from right')
+							--log:debug('Ignore SYN from right')
 						else -- SYN/ACK from right -> send ack + stall table lookup
-							log:debug('Received SYN/ACK from server, sending ACK back')
+							--log:debug('Received SYN/ACK from server, sending ACK back')
 							local diff, stalled = stateCookie:setRightVerified(rRXPkt)
 							if diff then
 								-- ack to server
@@ -428,13 +428,13 @@ function synProxyTask(devL, devR, strategy, threadId)
 								rTXQueue:sendSingle(rTXAckBufs[1])
 									
 								if stalled then
-									log:debug('sending stalled')
+									--log:debug('sending stalled')
 									forwardStalled(diff, stalled)
 									stalled:offloadTcpChecksum()
 									rTXQueue:sendSingle(stalled)
 								end
 							else
-								log:debug("right verify failed")
+								--log:debug("right verify failed")
 							end
 						end
 					-- any verified packet from server
@@ -442,11 +442,11 @@ function synProxyTask(devL, devR, strategy, threadId)
 						local diff, stalled = stateCookie:isVerified(rRXPkt) 
 						if not diff then
 							-- not verified, not syn/ack from right
-							log:warn("dropping unverfied not syn packet from right")
+							--log:warn("dropping unverfied not syn packet from right")
 						elseif diff == "stall" then
 							--log:debug('stall from right')
 						elseif diff then 
-							log:debug('Received packet of verified connection from right, translating and forwarding')
+							--log:debug('Received packet of verified connection from right, translating and forwarding')
 							if numForwardL == 0 then
 								lTXForwardBufs:allocN(60, rx - (i - 1))
 							end
