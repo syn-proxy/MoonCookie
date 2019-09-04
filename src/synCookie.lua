@@ -267,6 +267,36 @@ function mod.verifyCookie(pkt)
 	end
 end
 
+function mod.verifyAuthCookie(pkt)
+	if pkt.eth.src:get() == SERVER_MAC_64 then
+		--log:warn("Verify cookie from Server -> drop")
+		return false
+	end
+
+	local cookie = pkt.tcp:getAckNumber()
+	cookie = cookie - 1
+
+	-- check timestamp first
+	local ts = 0
+
+	-- check hash
+	local hash = band(cookie, 0x000fffff)
+	if not verifyHash(
+			hash, 
+			pkt.ip4:getSrc(), 
+			pkt.ip4:getDst(), 
+			pkt.tcp:getSrc(), 
+			pkt.tcp:getDst(), 
+			ts
+	) then
+		--log:warn('Received cookie with invalid hash')
+		return false
+	else
+		-- finally decode options and return it
+		--log:debug('Received legitimate cookie')
+		return true
+	end
+end
 
 -------------------------------------------------------------------------------------------
 ---- Packet modification and crafting for cookie strategy
@@ -311,10 +341,15 @@ end
 
 ffi.cdef[[
 	void calculate_cookies_batched(struct rte_mbuf *pkts[], uint32_t num, struct sipkey *key);
+	void calculate_auth_cookies_batched(struct rte_mbuf *pkts[], uint32_t num, struct sipkey *key);
 ]]
 
 function mod.calculateCookiesBatched(mbufArray, num)
 	clib.calculate_cookies_batched(mbufArray, num, hasher.key)
+end
+
+function mod.calculateAuthCookiesBatched(mbufArray, num)
+	clib.calculate_auth_cookies_batched(mbufArray, num, hasher.key)
 end
 
 function mod.forwardStalled(diff, txBuf)

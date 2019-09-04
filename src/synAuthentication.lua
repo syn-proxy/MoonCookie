@@ -10,6 +10,7 @@ local log	= require "log"
 local memory = require "memory"
 local proto = require "proto/proto"
 local cookie = require "src/synCookie"
+local verifyAuthCookie = cookie.verifyAuthCookie
 require "utils"
 
 local clib = ffi.load("build/mooncookie")
@@ -77,6 +78,15 @@ function mod.createResponseAuthFull(txBuf, rxPkt)
 
 	txPkt.tcp:setAckNumber(rxPkt.tcp:getSeqNumber() + 1)
 	-- we choose seq number
+end
+
+function mod.createResponseAuthCookie(txBuf, rxPkt)
+	local txPkt = txBuf:getTcp4Packet()
+	
+	setSwappedAddresses(txPkt, rxPkt)
+
+	txPkt.tcp:setAckNumber(rxPkt.tcp:getSeqNumber() + 1)
+	-- we choose seq number for batch
 end
 
 function mod.getSynAckBufs()
@@ -156,6 +166,12 @@ end
 function bitMapAuth:isWhitelistedFull(pkt)
 	local k = getKey(pkt)
 	local isAck = pkt.tcp:getAck() and not pkt.tcp:getSyn()
+	if isAck then
+		local verified = verifyAuthCookie(pkt)
+		if verified == false then
+			return 0
+		end
+	end
 	local result = clib.mg_bit_map_auth_update(self.map, k, isAck)
 	if result then
 		return 1 -- forward

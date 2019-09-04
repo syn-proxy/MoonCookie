@@ -21,6 +21,7 @@ local STRAT = {
 	auth_invalid= 2,
 	auth_full	= 3,
 	auth_ttl	= 4,
+	auth_cookie	= 5,
 }
 
 function configure(parser)
@@ -95,6 +96,8 @@ local forwardTrafficAuth 		= auth.forwardTraffic
 local createResponseAuthInvalid	= auth.createResponseAuthInvalid
 local createResponseAuthFull 	= auth.createResponseAuthFull
 local createResponseRst 		= auth.createResponseRst
+local createResponseCookie 		= auth.createResponseCookie
+local calculateAuthCookiesBatched 	= cookie.calculateAuthCookiesBatched
 
 
 ---------------------------------------------------
@@ -268,6 +271,44 @@ function synProxyTask(devL, devR, strategy, threadId)
 						numForwardR = numForwardR + 1
 						forwardTrafficAuth(rTXForwardBufs[numForwardR], lRXBufs[i])
 					end
+				elseif strategy == STRAT['auth_cookie'] then
+					-- do a full handshake with cookie for whitelisting, then proxy sends rst
+					local forward = false
+					if lRXPkt.tcp:getSyn() and not lRXPkt.tcp:getAck() then
+						if bitMapAuth:isWhitelistedSyn(lRXPkt) then
+							forward = true
+						else
+							-- create and send packet with wrong sequence number
+							if numAuth == 0 then
+								lTXAuthBufs:allocN(60, rx - (i - 1))
+							end
+							numAuth = numAuth + 1
+							createResponseAuthCookie(lTXAuthBufs[numAuth], lRXPkt)
+						end
+					else
+						local action = bitMapAuth:isWhitelistedFull(lRXPkt) 
+						if action == 1 then
+							forward = true
+						elseif action == 2 then
+							-- send rst
+							if numRst == 0 then
+								lTXRstBufs:allocN(60, rx - (i - 1))
+							end
+							numRst = numRst + 1
+							createResponseRst(lTXRstBufs[numRst], lRXPkt)
+						else
+							-- drop
+							-- we either received a rst that now whitelisted the connection
+							-- or we received not whitelisted junk
+						end
+					end
+					if forward then
+						if numForwardR == 0 then
+							rTXForwardBufs:allocN(60, rx - (i - 1))
+						end
+						numForwardR = numForwardR + 1
+						forwardTrafficAuth(rTXForwardBufs[numForwardR], lRXBufs[i])
+					end
 				elseif strategy == STRAT['auth_ttl'] then
 					-- send wrong acknowledgement number on unverified SYN
 					-- only accept the RST from the client if the TTL values match
@@ -366,6 +407,14 @@ function synProxyTask(devL, devR, strategy, threadId)
 					lTXQueue:sendN(lTXSynAckBufs, numSynAck)
 					lTXSynAckBufs:freeAfter(numSynAck)
 				end
+			elseif strategy == STRAT['auth_cookie'] then	
+				if numAuth > 0 then
+					-- send syn ack
+					calculateAuthCookiesBatched(lTXAuthBufs.array, numAuth)
+					lTXAuthBufs:offloadTcpChecksums(nil, nil, nil, numAuth)
+					lTXQueue:sendN(lTXAuthBufs, numAuth)
+					lTXAuthBufs:freeAfter(numAuth)
+				end
 			else
 				-- send packets with wrong ack number
 				if numAuth > 0 then
@@ -406,7 +455,7 @@ function synProxyTask(devL, devR, strategy, threadId)
 			else -- TCP
 				--lRXBufs[i]:dump()
 				-- TCP SYN Authentication strategy -> forward
-				if strategy == STRAT['auth_invalid'] or strategy == STRAT['auth_full'] or strategy == STRAT['auth_ttl'] then
+				if strategy == STRAT['auth_invalid'] or strategy == STRAT['auth_full'] or strategy == STRAT['auth_ttl'] or strategy == STRAT['auth_cookie'] then
 					if numForwardL == 0 then
 						lTXForwardBufs:allocN(60, rx - (i - 1))
 					end
