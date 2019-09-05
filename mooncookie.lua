@@ -95,6 +95,7 @@ local calculateCookiesBatched 	= cookie.calculateCookiesBatched
 local forwardTrafficAuth 		= auth.forwardTraffic
 local createResponseAuthInvalid	= auth.createResponseAuthInvalid
 local createResponseAuthFull 	= auth.createResponseAuthFull
+local createResponseAuthCookie 	= auth.createResponseAuthCookie
 local createResponseRst 		= auth.createResponseRst
 local createResponseCookie 		= auth.createResponseCookie
 local calculateAuthCookiesBatched 	= cookie.calculateAuthCookiesBatched
