@@ -289,8 +289,7 @@ function mod.verifyAuthCookie(pkt)
 			pkt.tcp:getDst(), 
 			ts
 	) then
-		--log:warn('Received cookie with invalid hash')
-		return false
+		return true
 	else
 		-- finally decode options and return it
 		--log:debug('Received legitimate cookie')
