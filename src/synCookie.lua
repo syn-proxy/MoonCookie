@@ -570,7 +570,7 @@ end
 ---- Packet mempools and buf arrays
 -------------------------------------------------------------------------------------------
 
-function mod.getSynAckBufs()
+function mod.getSynAckBufs(batch)
 	local lTXSynAckMem = memory.createMemPool(function(buf)
 		local pkt = buf:getTcp4Packet()
 		pkt:fill{
@@ -644,10 +644,10 @@ function mod.getSynAckBufs()
 		end
 		buf:setSize(size)
 	end)
-	return lTXSynAckMem:bufArray()
+	return lTXSynAckMem:bufArray(batch)
 end
 	
-function mod.getForwardBufs()
+function mod.getForwardBufs(batch)
 	local lTXForwardMem = memory.createMemPool(function(buf)
 		local pkt = buf:getTcp4Packet():fill{
 			ethSrc=proto.eth.NULL,
@@ -662,14 +662,14 @@ function mod.getForwardBufs()
 			pktLength=60,
 		}
 	end)
-	return lTXForwardMem:bufArray()
+	return lTXForwardMem:bufArray(batch)
 end
 	
-function mod.getAckBufs()
+function mod.getAckBufs(batch)
 	local rTXAckMem = memory.createMemPool(function(buf)
 		-- we copy RX packet anyway, so no prefilling necessary
 	end)
-	return rTXAckMem:bufArray(1)
+	return rTXAckMem:bufArray(batch)
 end
 
 

@@ -40,6 +40,7 @@ function configure(parser)
 	end
 	parser:option("-s --strategy", "Mitigation strategy [" .. strats .. "]"):args("1"):convert(STRAT):default('cookie')
 	parser:option("-t --threads", "Number of threads to start"):args(1):convert(tonumber):default(1)
+	parser:option("-b --batch", "Batchsize"):args(1):convert(tonumber):default(63)
 	return parser:parse()
 end
 
@@ -59,7 +60,7 @@ function master(args, ...)
 	device.waitForLinks()
 
 	for i = 1, args.threads do
-		libmoon.startTask("synProxyTask", devL, devR, args.strategy, i - 1)
+		libmoon.startTask("synProxyTask", devL, devR, args.strategy, i - 1, args.batch)
 	end
 	stats.startStatsTask{devL, devR} 
 	libmoon.waitForTasks()
@@ -109,11 +110,11 @@ local function info(msg, id)
 	print(getColorCode(id + 1) .. '[MoonCookie: id=' .. id .. '] ' .. getColorCode("white") .. msg)
 end
 
-function synProxyTask(devL, devR, strategy, threadId)
+function synProxyTask(devL, devR, strategy, threadId, batch)
 	--log:setLevel("DEBUG")
 	info('Initialising SYN proxy', threadId)
 
-	local maxBurstSize = 63
+	local maxBurstSize = batch
 
 	-- RX buffers for left
 	local lRXQueue = devL:getRxQueue(threadId)
@@ -131,25 +132,25 @@ function synProxyTask(devL, devR, strategy, threadId)
 
 	-- buffer for cookie syn/ack to left
 	local numSynAck = 0
-	local lTXSynAckBufs = cookie.getSynAckBufs()
+	local lTXSynAckBufs = cookie.getSynAckBufs(maxBurstSize)
 	
 	-- ack to right (on syn/ack from right)
 	local numAck = 0
-	local rTXAckBufs = cookie.getAckBufs()
+	local rTXAckBufs = cookie.getAckBufs(maxBurstSize)
 	
 	-- buffer for forwarding
 	local numForwardL = 0 
-	local lTXForwardBufs = cookie.getForwardBufs()
+	local lTXForwardBufs = cookie.getForwardBufs(maxBurstSize)
 	local numForwardR = 0 
-	local rTXForwardBufs = cookie.getForwardBufs()
+	local rTXForwardBufs = cookie.getForwardBufs(maxBurstSize)
 	
 	-- buffer for syn auth answer to left
 	local numAuth = 0
-	local lTXAuthBufs = auth.getSynAckBufs()
+	local lTXAuthBufs = auth.getSynAckBufs(maxBurstSize)
 	
 	-- buffer for rst answer to left
 	local numRst = 0
-	local lTXRstBufs = auth.getRstBufs()
+	local lTXRstBufs = auth.getRstBufs(maxBurstSize)
 
 	-- buffers for not TCP packets
 	-- need to behandled separately as we cant just offload TCP checksums here

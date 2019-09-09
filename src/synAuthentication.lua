@@ -89,7 +89,7 @@ function mod.createResponseAuthCookie(txBuf, rxPkt)
 	-- we choose seq number for batch
 end
 
-function mod.getSynAckBufs()
+function mod.getSynAckBufs(batch)
 	local mem = memory.createMemPool(function(buf)
 		local pkt = buf:getTcp4Packet():fill{
 			ethSrc=proto.eth.NULL,
@@ -105,10 +105,10 @@ function mod.getSynAckBufs()
 			pktLength=54,
 		}
 	end)
-	return mem:bufArray()
+	return mem:bufArray(batch)
 end
 
-function mod.getRstBufs()
+function mod.getRstBufs(batch)
 	local mem = memory.createMemPool(function(buf)
 		local pkt = buf:getTcp4Packet():fill{
 			ethSrc=proto.eth.NULL,
@@ -123,7 +123,7 @@ function mod.getRstBufs()
 			pktLength=60,
 		}
 	end)
-	return mem:bufArray()
+	return mem:bufArray(batch)
 end
 
 
